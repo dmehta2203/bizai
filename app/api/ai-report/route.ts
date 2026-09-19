@@ -23,30 +23,102 @@ const supabase = createClient(
 // POST API
 // ======================================
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest
+) {
   try {
-    // ======================================
-    // GET REQUEST DATA
-    // ======================================
-
-    const body = await request.json();
-
-    const { userId } = body;
 
     // ======================================
-    // VALIDATE USER
+    // GET AUTHORIZATION HEADER
     // ======================================
 
-    if (!userId) {
+    const authorization =
+      request.headers.get(
+        "authorization"
+      );
+
+    if (
+      !authorization ||
+      !authorization.startsWith(
+        "Bearer "
+      )
+    ) {
       return NextResponse.json(
         {
-          error: "User ID is required.",
+          error:
+            "Authentication required.",
         },
         {
-          status: 400,
+          status: 401,
         }
       );
     }
+
+    // ======================================
+    // GET ACCESS TOKEN
+    // ======================================
+
+    const accessToken =
+      authorization
+        .replace(
+          "Bearer ",
+          ""
+        )
+        .trim();
+
+    if (!accessToken) {
+      return NextResponse.json(
+        {
+          error:
+            "Authentication token is missing.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    // ======================================
+    // VERIFY USER WITH SUPABASE
+    // ======================================
+
+    const {
+      data: {
+        user: authenticatedUser,
+      },
+      error: authError,
+    } =
+      await supabase.auth.getUser(
+        accessToken
+      );
+
+    if (
+      authError ||
+      !authenticatedUser
+    ) {
+
+      console.error(
+        "Authentication error:",
+        authError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Invalid or expired authentication session.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    // ======================================
+    // TRUST ONLY VERIFIED USER ID
+    // ======================================
+
+    const userId =
+      authenticatedUser.id;
 
     // ======================================
     // CHECK SUBSCRIPTION
@@ -60,11 +132,20 @@ export async function POST(request: NextRequest) {
       .select(
         "plan, status, current_period_end"
       )
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .order("created_at", {
-        ascending: false,
-      })
+      .eq(
+        "user_id",
+        userId
+      )
+      .eq(
+        "status",
+        "active"
+      )
+      .order(
+        "created_at",
+        {
+          ascending: false,
+        }
+      )
       .limit(1)
       .maybeSingle();
 
@@ -105,14 +186,21 @@ export async function POST(request: NextRequest) {
     // CHECK EXPIRY
     // ======================================
 
-    if (subscription.current_period_end) {
-      const expiryDate = new Date(
-        subscription.current_period_end
-      );
+    if (
+      subscription.current_period_end
+    ) {
 
-      const today = new Date();
+      const expiryDate =
+        new Date(
+          subscription.current_period_end
+        );
 
-      if (expiryDate < today) {
+      const today =
+        new Date();
+
+      if (
+        expiryDate < today
+      ) {
         return NextResponse.json(
           {
             error:
@@ -165,32 +253,50 @@ export async function POST(request: NextRequest) {
       supabase
         .from("customers")
         .select("*")
-        .eq("user_id", userId),
+        .eq(
+          "user_id",
+          userId
+        ),
 
       supabase
         .from("leads")
         .select("*")
-        .eq("user_id", userId),
+        .eq(
+          "user_id",
+          userId
+        ),
 
       supabase
         .from("tasks")
         .select("*")
-        .eq("user_id", userId),
+        .eq(
+          "user_id",
+          userId
+        ),
 
       supabase
         .from("follow_ups")
         .select("*")
-        .eq("user_id", userId),
+        .eq(
+          "user_id",
+          userId
+        ),
 
       supabase
         .from("appointments")
         .select("*")
-        .eq("user_id", userId),
+        .eq(
+          "user_id",
+          userId
+        ),
 
       supabase
         .from("sales")
         .select("*")
-        .eq("user_id", userId),
+        .eq(
+          "user_id",
+          userId
+        ),
     ]);
 
     // ======================================
@@ -248,17 +354,27 @@ export async function POST(request: NextRequest) {
     // GET TODAY DATE
     // ======================================
 
-    const now = new Date();
+    const now =
+      new Date();
 
-    const year = now.getFullYear();
+    const year =
+      now.getFullYear();
 
-    const month = String(
-      now.getMonth() + 1
-    ).padStart(2, "0");
+    const month =
+      String(
+        now.getMonth() + 1
+      ).padStart(
+        2,
+        "0"
+      );
 
-    const day = String(
-      now.getDate()
-    ).padStart(2, "0");
+    const day =
+      String(
+        now.getDate()
+      ).padStart(
+        2,
+        "0"
+      );
 
     const todayString =
       `${year}-${month}-${day}`;
@@ -269,9 +385,14 @@ export async function POST(request: NextRequest) {
 
     const totalRevenue =
       sales.reduce(
-        (total: number, sale: any) =>
+        (
+          total: number,
+          sale: any
+        ) =>
           total +
-          Number(sale.amount || 0),
+          Number(
+            sale.amount || 0
+          ),
         0
       );
 
@@ -279,7 +400,8 @@ export async function POST(request: NextRequest) {
       sales
         .filter(
           (sale: any) =>
-            sale.payment_status === "Paid"
+            sale.payment_status ===
+            "Paid"
         )
         .reduce(
           (
@@ -287,7 +409,9 @@ export async function POST(request: NextRequest) {
             sale: any
           ) =>
             total +
-            Number(sale.amount || 0),
+            Number(
+              sale.amount || 0
+            ),
           0
         );
 
@@ -295,7 +419,8 @@ export async function POST(request: NextRequest) {
       sales
         .filter(
           (sale: any) =>
-            sale.payment_status === "Pending"
+            sale.payment_status ===
+            "Pending"
         )
         .reduce(
           (
@@ -303,7 +428,9 @@ export async function POST(request: NextRequest) {
             sale: any
           ) =>
             total +
-            Number(sale.amount || 0),
+            Number(
+              sale.amount || 0
+            ),
           0
         );
 
@@ -314,31 +441,36 @@ export async function POST(request: NextRequest) {
     const newLeads =
       leads.filter(
         (lead: any) =>
-          lead.status === "New"
+          lead.status ===
+          "New"
       ).length;
 
     const contactedLeads =
       leads.filter(
         (lead: any) =>
-          lead.status === "Contacted"
+          lead.status ===
+          "Contacted"
       ).length;
 
     const interestedLeads =
       leads.filter(
         (lead: any) =>
-          lead.status === "Interested"
+          lead.status ===
+          "Interested"
       ).length;
 
     const negotiationLeads =
       leads.filter(
         (lead: any) =>
-          lead.status === "Negotiation"
+          lead.status ===
+          "Negotiation"
       ).length;
 
     const convertedLeads =
       leads.filter(
         (lead: any) =>
-          lead.status === "Converted"
+          lead.status ===
+          "Converted"
       ).length;
 
     // ======================================
@@ -349,8 +481,10 @@ export async function POST(request: NextRequest) {
       leads.length > 0
         ? Number(
             (
-              (convertedLeads /
-                leads.length) *
+              (
+                convertedLeads /
+                leads.length
+              ) *
               100
             ).toFixed(1)
           )
@@ -363,35 +497,44 @@ export async function POST(request: NextRequest) {
     const completedTasks =
       tasks.filter(
         (task: any) =>
-          task.status === "Completed"
+          task.status ===
+          "Completed"
       ).length;
 
     const pendingTasks =
       tasks.filter(
         (task: any) =>
-          task.status === "Pending"
+          task.status ===
+          "Pending"
       ).length;
 
     const overdueTasks =
-      tasks.filter((task: any) => {
-        if (
-          task.status === "Completed" ||
-          !task.due_date
-        ) {
-          return false;
-        }
+      tasks.filter(
+        (task: any) => {
 
-        return (
-          task.due_date < todayString
-        );
-      }).length;
+          if (
+            task.status ===
+              "Completed" ||
+            !task.due_date
+          ) {
+            return false;
+          }
+
+          return (
+            task.due_date <
+            todayString
+          );
+        }
+      ).length;
 
     const taskCompletionRate =
       tasks.length > 0
         ? Number(
             (
-              (completedTasks /
-                tasks.length) *
+              (
+                completedTasks /
+                tasks.length
+              ) *
               100
             ).toFixed(1)
           )
@@ -404,19 +547,22 @@ export async function POST(request: NextRequest) {
     const completedFollowUps =
       followUps.filter(
         (followUp: any) =>
-          followUp.completed === true
+          followUp.completed ===
+          true
       ).length;
 
     const pendingFollowUps =
       followUps.filter(
         (followUp: any) =>
-          followUp.completed !== true
+          followUp.completed !==
+          true
       ).length;
 
     const overdueFollowUps =
       followUps.filter(
         (followUp: any) =>
-          followUp.completed !== true &&
+          followUp.completed !==
+            true &&
           followUp.due_date <
             todayString
       ).length;
@@ -424,7 +570,8 @@ export async function POST(request: NextRequest) {
     const followUpsToday =
       followUps.filter(
         (followUp: any) =>
-          followUp.completed !== true &&
+          followUp.completed !==
+            true &&
           followUp.due_date ===
             todayString
       ).length;
@@ -464,11 +611,15 @@ export async function POST(request: NextRequest) {
         10
       );
 
-    if (healthScore < 0) {
+    if (
+      healthScore < 0
+    ) {
       healthScore = 0;
     }
 
-    if (healthScore > 100) {
+    if (
+      healthScore > 100
+    ) {
       healthScore = 100;
     }
 
@@ -477,8 +628,10 @@ export async function POST(request: NextRequest) {
     // ======================================
 
     const reportData = {
+
       subscription: {
-        plan: subscription.plan,
+        plan:
+          subscription.plan,
       },
 
       business: {
@@ -686,12 +839,16 @@ professional and actionable.
 
     const completion =
       await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+
+        model:
+          "gpt-4o-mini",
 
         messages: [
+
           {
             role: "system",
-            content: systemPrompt,
+            content:
+              systemPrompt,
           },
 
           {
@@ -699,9 +856,11 @@ professional and actionable.
             content:
               "Generate my complete AI Daily Business Report.",
           },
+
         ],
 
-        temperature: 0.6,
+        temperature:
+          0.6,
       });
 
     // ======================================
@@ -709,10 +868,13 @@ professional and actionable.
     // ======================================
 
     const report =
-      completion.choices[0]
-        ?.message?.content;
+      completion
+        .choices[0]
+        ?.message
+        ?.content;
 
     if (!report) {
+
       return NextResponse.json(
         {
           error:
@@ -729,26 +891,74 @@ professional and actionable.
     // ======================================
 
     return NextResponse.json({
-      success: true,
 
-      report: report,
+      success:
+        true,
 
-      reportData: reportData,
+      report:
+        report,
+
+      reportData:
+        reportData,
 
       generatedAt:
         new Date().toISOString(),
+
     });
 
   } catch (error: any) {
+
     console.error(
       "AI Report Error:",
       error
     );
 
+    // ======================================
+    // OPENAI RATE LIMIT / QUOTA
+    // ======================================
+
+    if (
+      error?.status === 429
+    ) {
+
+      return NextResponse.json(
+        {
+          error:
+            "AI service is temporarily unavailable because the API quota or credits have been exhausted. Please add OpenAI API credits and try again.",
+        },
+        {
+          status: 429,
+        }
+      );
+    }
+
+    // ======================================
+    // OPENAI AUTH ERROR
+    // ======================================
+
+    if (
+      error?.status === 401
+    ) {
+
+      return NextResponse.json(
+        {
+          error:
+            "OpenAI API key is invalid or missing.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    // ======================================
+    // GENERAL ERROR
+    // ======================================
+
     return NextResponse.json(
       {
         error:
-          error.message ||
+          error?.message ||
           "Something went wrong while generating the AI Report.",
       },
       {

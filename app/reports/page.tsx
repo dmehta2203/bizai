@@ -108,17 +108,42 @@ function ReportsContent() {
   // =====================================
 
   async function generateReport() {
-    if (!userId) {
-      setError(
-        "Unable to find your user account. Please login again."
-      );
-
-      return;
-    }
-
     try {
       setLoading(true);
       setError("");
+
+      // =====================================
+      // GET CURRENT SESSION
+      // =====================================
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.user) {
+        router.push("/login");
+        return;
+      }
+
+      // =====================================
+      // CHECK ACCESS TOKEN
+      // =====================================
+
+      if (!session.access_token) {
+        setError(
+          "Your authentication session is missing. Please log in again."
+        );
+
+        await supabase.auth.signOut();
+
+        router.push("/login");
+
+        return;
+      }
+
+      // =====================================
+      // SECURE AI REPORT REQUEST
+      // =====================================
 
       const response =
         await fetch(
@@ -129,11 +154,12 @@ function ReportsContent() {
             headers: {
               "Content-Type":
                 "application/json",
+
+              Authorization:
+                `Bearer ${session.access_token}`,
             },
 
-            body: JSON.stringify({
-              userId: userId,
-            }),
+            body: JSON.stringify({}),
           }
         );
 
@@ -330,7 +356,10 @@ function ReportsContent() {
 
             <button
               onClick={generateReport}
-              disabled={loading || !userId}
+              disabled={
+                loading ||
+                !userId
+              }
               className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-3 rounded-xl font-semibold transition"
             >
 
@@ -385,7 +414,10 @@ function ReportsContent() {
 
             <button
               onClick={generateReport}
-              disabled={loading || !userId}
+              disabled={
+                loading ||
+                !userId
+              }
               className="mt-8 bg-gradient-to-r from-purple-600 to-blue-600 hover:opacity-90 px-8 py-4 rounded-xl font-bold text-lg transition disabled:opacity-50"
             >
 
