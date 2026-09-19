@@ -35,32 +35,96 @@ export async function POST(
   try {
 
     // ======================================
-    // GET REQUEST DATA
+    // GET AUTHORIZATION HEADER
     // ======================================
 
-    const body =
-      await request.json();
+    const authorization =
+      request.headers.get(
+        "authorization"
+      );
 
-    const { userId } =
-      body;
+    if (
+      !authorization ||
+      !authorization.startsWith(
+        "Bearer "
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Authentication required.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
 
     // ======================================
-    // VALIDATE USER
+    // GET ACCESS TOKEN
     // ======================================
 
-    if (!userId) {
+    const accessToken =
+      authorization
+        .replace(
+          "Bearer ",
+          ""
+        )
+        .trim();
+
+    if (!accessToken) {
+      return NextResponse.json(
+        {
+          error:
+            "Authentication token is missing.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    // ======================================
+    // VERIFY USER WITH SUPABASE
+    // ======================================
+
+    const {
+      data: {
+        user: authenticatedUser,
+      },
+      error: authError,
+    } =
+      await supabase.auth.getUser(
+        accessToken
+      );
+
+    if (
+      authError ||
+      !authenticatedUser
+    ) {
+
+      console.error(
+        "Authentication error:",
+        authError
+      );
 
       return NextResponse.json(
         {
           error:
-            "User ID is required.",
+            "Invalid or expired authentication session.",
         },
         {
-          status: 400,
+          status: 401,
         }
       );
-
     }
+
+    // ======================================
+    // TRUST ONLY VERIFIED USER ID
+    // ======================================
+
+    const userId =
+      authenticatedUser.id;
 
     // ======================================
     // CHECK SUBSCRIPTION
@@ -107,7 +171,6 @@ export async function POST(
           status: 500,
         }
       );
-
     }
 
     // ======================================
@@ -125,7 +188,6 @@ export async function POST(
           status: 403,
         }
       );
-
     }
 
     // ======================================
@@ -157,9 +219,7 @@ export async function POST(
             status: 403,
           }
         );
-
       }
-
     }
 
     // ======================================
@@ -186,7 +246,6 @@ export async function POST(
           status: 403,
         }
       );
-
     }
 
     // ======================================
@@ -359,13 +418,15 @@ export async function POST(
     const newLeads =
       leads.filter(
         (lead: any) =>
-          lead.status === "New"
+          lead.status ===
+          "New"
       ).length;
 
     const contactedLeads =
       leads.filter(
         (lead: any) =>
-          lead.status === "Contacted"
+          lead.status ===
+          "Contacted"
       ).length;
 
     const interestedLeads =
@@ -393,8 +454,10 @@ export async function POST(
       totalLeads > 0
         ? Number(
             (
-              (convertedLeads /
-                totalLeads) *
+              (
+                convertedLeads /
+                totalLeads
+              ) *
               100
             ).toFixed(1)
           )
@@ -454,8 +517,10 @@ export async function POST(
       totalTasks > 0
         ? Number(
             (
-              (completedTasks /
-                totalTasks) *
+              (
+                completedTasks /
+                totalTasks
+              ) *
               100
             ).toFixed(1)
           )
@@ -504,8 +569,10 @@ export async function POST(
       totalFollowUps > 0
         ? Number(
             (
-              (completedFollowUps /
-                totalFollowUps) *
+              (
+                completedFollowUps /
+                totalFollowUps
+              ) *
               100
             ).toFixed(1)
           )
@@ -721,6 +788,7 @@ professional and useful.
           "gpt-4o-mini",
 
         messages: [
+
           {
             role:
               "system",
@@ -736,6 +804,7 @@ professional and useful.
             content:
               prompt,
           },
+
         ],
 
         temperature:
@@ -792,10 +861,54 @@ professional and useful.
       error
     );
 
+    // ======================================
+    // OPENAI RATE LIMIT / QUOTA
+    // ======================================
+
+    if (
+      error?.status === 429
+    ) {
+
+      return NextResponse.json(
+        {
+          error:
+            "AI service is temporarily unavailable because the API quota or credits have been exhausted. Please add OpenAI API credits and try again.",
+        },
+        {
+          status: 429,
+        }
+      );
+
+    }
+
+    // ======================================
+    // OPENAI AUTH ERROR
+    // ======================================
+
+    if (
+      error?.status === 401
+    ) {
+
+      return NextResponse.json(
+        {
+          error:
+            "OpenAI API key is invalid or missing.",
+        },
+        {
+          status: 500,
+        }
+      );
+
+    }
+
+    // ======================================
+    // GENERAL ERROR
+    // ======================================
+
     return NextResponse.json(
       {
         error:
-          error.message ||
+          error?.message ||
           "Something went wrong while generating the Business Report.",
       },
       {
