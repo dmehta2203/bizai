@@ -32,10 +32,14 @@ export default function FollowUpsPage() {
   const router = useRouter();
 
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userId, setUserId] =
+    useState<string | null>(null);
 
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] =
+    useState(true);
+
+  const [refreshing, setRefreshing] =
+    useState(false);
 
   const [generatingId, setGeneratingId] =
     useState<string | null>(null);
@@ -46,7 +50,8 @@ export default function FollowUpsPage() {
   const [copiedId, setCopiedId] =
     useState<string | null>(null);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] =
+    useState("");
 
   const [filter, setFilter] =
     useState<FollowUpFilter>("all");
@@ -63,22 +68,42 @@ export default function FollowUpsPage() {
   }, []);
 
   async function loadUserAndLeads() {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      const {
+        data: { session },
+        error: sessionError,
+      } =
+        await supabase.auth.getSession();
 
-    if (!session?.user) {
-      router.push("/login");
-      return;
+      if (
+        sessionError ||
+        !session?.user
+      ) {
+        router.push("/login");
+        return;
+      }
+
+      if (!session.access_token) {
+        await supabase.auth.signOut();
+        router.push("/login");
+        return;
+      }
+
+      setUserId(session.user.id);
+
+      await fetchLeads(
+        session.user.id
+      );
+    } catch (error) {
+      console.error(
+        "Load follow-ups error:",
+        error
+      );
+    } finally {
+      setLoading(false);
     }
-
-    setUserId(session.user.id);
-
-    await fetchLeads(session.user.id);
-
-    setLoading(false);
   }
 
   // =====================================
@@ -88,17 +113,27 @@ export default function FollowUpsPage() {
   async function fetchLeads(
     currentUserId?: string
   ) {
-    const id = currentUserId || userId;
+    const id =
+      currentUserId || userId;
 
     if (!id) return;
 
-    const { data, error } = await supabase
+    const {
+      data,
+      error,
+    } = await supabase
       .from("leads")
       .select("*")
-      .eq("user_id", id)
-      .order("follow_up_date", {
-        ascending: true,
-      });
+      .eq(
+        "user_id",
+        id
+      )
+      .order(
+        "follow_up_date",
+        {
+          ascending: true,
+        }
+      );
 
     if (error) {
       console.error(
@@ -111,7 +146,9 @@ export default function FollowUpsPage() {
       return;
     }
 
-    setLeads(data || []);
+    setLeads(
+      data || []
+    );
   }
 
   // =====================================
@@ -133,22 +170,33 @@ export default function FollowUpsPage() {
   // =====================================
 
   function getToday() {
-    const today = new Date();
+    const today =
+      new Date();
 
-    const year = today.getFullYear();
+    const year =
+      today.getFullYear();
 
-    const month = String(
-      today.getMonth() + 1
-    ).padStart(2, "0");
+    const month =
+      String(
+        today.getMonth() + 1
+      ).padStart(
+        2,
+        "0"
+      );
 
-    const day = String(
-      today.getDate()
-    ).padStart(2, "0");
+    const day =
+      String(
+        today.getDate()
+      ).padStart(
+        2,
+        "0"
+      );
 
     return `${year}-${month}-${day}`;
   }
 
-  const today = getToday();
+  const today =
+    getToday();
 
   // =====================================
   // UPDATE FOLLOW-UP
@@ -157,27 +205,47 @@ export default function FollowUpsPage() {
   async function updateFollowUp(
     id: string,
     field: string,
-    value: string | boolean | null
+    value:
+      | string
+      | boolean
+      | null
   ) {
     if (!userId) {
-      alert("Please login first");
+      alert(
+        "Please login first"
+      );
+
       return;
     }
 
     setSavingId(id);
 
-    const { error } = await supabase
-      .from("leads")
-      .update({
-        [field]: value,
-      })
-      .eq("id", id)
-      .eq("user_id", userId);
+    const {
+      error,
+    } =
+      await supabase
+        .from("leads")
+        .update({
+          [field]:
+            value,
+        })
+        .eq(
+          "id",
+          id
+        )
+        .eq(
+          "user_id",
+          userId
+        );
 
     if (error) {
-      console.error(error);
+      console.error(
+        error
+      );
 
-      alert(error.message);
+      alert(
+        error.message
+      );
     } else {
       await fetchLeads();
     }
@@ -192,27 +260,113 @@ export default function FollowUpsPage() {
   async function generateAIMessage(
     lead: Lead
   ) {
-    setGeneratingId(lead.id);
+    if (generatingId) {
+      return;
+    }
+
+    setGeneratingId(
+      lead.id
+    );
 
     try {
-      const response = await fetch(
-        "/api/chat",
-        {
-          method: "POST",
+      // =================================
+      // GET CURRENT SESSION
+      // =================================
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
+      const {
+        data: {
+          session,
+        },
+        error:
+          sessionError,
+      } =
+        await supabase.auth.getSession();
 
-          body: JSON.stringify({
-            followUpLead: lead,
-          }),
-        }
-      );
+      if (
+        sessionError ||
+        !session?.user
+      ) {
+        alert(
+          "Please login again."
+        );
 
-      const data =
-        await response.json();
+        router.push(
+          "/login"
+        );
+
+        return;
+      }
+
+      if (
+        !session.access_token
+      ) {
+        alert(
+          "Your authentication session is missing. Please log in again."
+        );
+
+        await supabase.auth.signOut();
+
+        router.push(
+          "/login"
+        );
+
+        return;
+      }
+
+      // =================================
+      // SEND SECURE AI REQUEST
+      // =================================
+
+      const response =
+        await fetch(
+          "/api/chat",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              Authorization:
+                `Bearer ${session.access_token}`,
+            },
+
+            body:
+              JSON.stringify({
+                followUpLead: {
+                  id:
+                    lead.id,
+
+                  name:
+                    lead.name,
+
+                  status:
+                    lead.status,
+
+                  follow_up_priority:
+                    lead.follow_up_priority,
+
+                  follow_up_notes:
+                    lead.follow_up_notes,
+                },
+              }),
+          }
+        );
+
+      let data: {
+        reply?: string;
+        error?: string;
+      };
+
+      try {
+        data =
+          await response.json();
+      } catch {
+        data = {
+          error:
+            "Invalid server response.",
+        };
+      }
 
       if (!response.ok) {
         throw new Error(
@@ -221,19 +375,46 @@ export default function FollowUpsPage() {
         );
       }
 
-      setAiMessages((current) => ({
-        ...current,
+      if (
+        !data.reply
+      ) {
+        throw new Error(
+          "The AI did not return a message."
+        );
+      }
 
-        [lead.id]: data.reply,
-      }));
-    } catch (error) {
-      console.error(error);
+      setAiMessages(
+        (current) => ({
+          ...current,
 
-      alert(
-        "Could not generate AI message. Please try again."
+          [lead.id]:
+            data.reply || "",
+        })
       );
+    } catch (
+      error
+    ) {
+      console.error(
+        "AI follow-up error:",
+        error
+      );
+
+      if (
+        error instanceof Error &&
+        error.message
+      ) {
+        alert(
+          error.message
+        );
+      } else {
+        alert(
+          "Could not generate AI message. Please try again."
+        );
+      }
     } finally {
-      setGeneratingId(null);
+      setGeneratingId(
+        null
+      );
     }
   }
 
@@ -241,8 +422,11 @@ export default function FollowUpsPage() {
   // COPY MESSAGE
   // =====================================
 
-  async function copyMessage(id: string) {
-    const message = aiMessages[id];
+  async function copyMessage(
+    id: string
+  ) {
+    const message =
+      aiMessages[id];
 
     if (!message) return;
 
@@ -251,15 +435,28 @@ export default function FollowUpsPage() {
         message
       );
 
-      setCopiedId(id);
+      setCopiedId(
+        id
+      );
 
-      setTimeout(() => {
-        setCopiedId(null);
-      }, 2000);
-    } catch (error) {
-      console.error(error);
+      setTimeout(
+        () => {
+          setCopiedId(
+            null
+          );
+        },
+        2000
+      );
+    } catch (
+      error
+    ) {
+      console.error(
+        error
+      );
 
-      alert("Could not copy message.");
+      alert(
+        "Could not copy message."
+      );
     }
   }
 
@@ -267,9 +464,13 @@ export default function FollowUpsPage() {
   // OPEN WHATSAPP
   // =====================================
 
-  function openWhatsApp(lead: Lead) {
+  function openWhatsApp(
+    lead: Lead
+  ) {
     const message =
-      aiMessages[lead.id];
+      aiMessages[
+        lead.id
+      ];
 
     if (!message) {
       alert(
@@ -287,21 +488,35 @@ export default function FollowUpsPage() {
       return;
     }
 
-    let phone = lead.phone.replace(
-      /\D/g,
-      ""
-    );
+    let phone =
+      lead.phone.replace(
+        /\D/g,
+        ""
+      );
 
-    if (phone.startsWith("0")) {
-      phone = phone.substring(1);
+    if (
+      phone.startsWith(
+        "0"
+      )
+    ) {
+      phone =
+        phone.substring(
+          1
+        );
     }
 
-    if (phone.length === 10) {
-      phone = "91" + phone;
+    if (
+      phone.length === 10
+    ) {
+      phone =
+        "91" +
+        phone;
     }
 
     const encodedMessage =
-      encodeURIComponent(message);
+      encodeURIComponent(
+        message
+      );
 
     const whatsappUrl =
       `https://api.whatsapp.com/send?phone=${phone}&text=${encodedMessage}`;
@@ -320,11 +535,17 @@ export default function FollowUpsPage() {
   function getPriorityStyle(
     priority: string | null
   ) {
-    if (priority === "High") {
+    if (
+      priority ===
+      "High"
+    ) {
       return "bg-red-500/10 border-red-500 text-red-400";
     }
 
-    if (priority === "Medium") {
+    if (
+      priority ===
+      "Medium"
+    ) {
       return "bg-yellow-500/10 border-yellow-500 text-yellow-400";
     }
 
@@ -338,7 +559,9 @@ export default function FollowUpsPage() {
   function getFollowUpStatus(
     lead: Lead
   ) {
-    if (!lead.follow_up_date) {
+    if (
+      !lead.follow_up_date
+    ) {
       return {
         text: "⚪ No Date",
 
@@ -348,7 +571,8 @@ export default function FollowUpsPage() {
     }
 
     if (
-      lead.follow_up_date < today
+      lead.follow_up_date <
+      today
     ) {
       return {
         text: "🔴 OVERDUE",
@@ -359,7 +583,8 @@ export default function FollowUpsPage() {
     }
 
     if (
-      lead.follow_up_date === today
+      lead.follow_up_date ===
+      today
     ) {
       return {
         text: "🟠 DUE TODAY",
@@ -381,19 +606,30 @@ export default function FollowUpsPage() {
   // FORMAT DATE
   // =====================================
 
-  function formatDate(date: string | null) {
+  function formatDate(
+    date: string | null
+  ) {
     if (!date) {
       return "No date selected";
     }
 
-    const [year, month, day] =
-      date.split("-").map(Number);
-
-    const localDate = new Date(
+    const [
       year,
-      month - 1,
-      day
-    );
+      month,
+      day,
+    ] =
+      date
+        .split("-")
+        .map(
+          Number
+        );
+
+    const localDate =
+      new Date(
+        year,
+        month - 1,
+        day
+      );
 
     return localDate.toLocaleDateString(
       "en-IN",
@@ -409,135 +645,202 @@ export default function FollowUpsPage() {
   // FOLLOW-UP DATA
   // =====================================
 
-  const pendingLeads = useMemo(() => {
-    return leads.filter(
-      (lead) =>
-        !lead.follow_up_completed
+  const pendingLeads =
+    useMemo(
+      () => {
+        return leads.filter(
+          (lead) =>
+            !lead.follow_up_completed
+        );
+      },
+      [leads]
     );
-  }, [leads]);
 
-  const completedLeads = useMemo(() => {
-    return leads.filter(
-      (lead) =>
-        lead.follow_up_completed
+  const completedLeads =
+    useMemo(
+      () => {
+        return leads.filter(
+          (lead) =>
+            lead.follow_up_completed
+        );
+      },
+      [leads]
     );
-  }, [leads]);
 
-  const overdueLeads = useMemo(() => {
-    return pendingLeads.filter(
-      (lead) =>
-        lead.follow_up_date &&
-        lead.follow_up_date < today
+  const overdueLeads =
+    useMemo(
+      () => {
+        return pendingLeads.filter(
+          (lead) =>
+            lead.follow_up_date &&
+            lead.follow_up_date <
+              today
+        );
+      },
+      [
+        pendingLeads,
+        today,
+      ]
     );
-  }, [pendingLeads, today]);
 
-  const dueTodayLeads = useMemo(() => {
-    return pendingLeads.filter(
-      (lead) =>
-        lead.follow_up_date === today
+  const dueTodayLeads =
+    useMemo(
+      () => {
+        return pendingLeads.filter(
+          (lead) =>
+            lead.follow_up_date ===
+            today
+        );
+      },
+      [
+        pendingLeads,
+        today,
+      ]
     );
-  }, [pendingLeads, today]);
 
-  const upcomingLeads = useMemo(() => {
-    return pendingLeads.filter(
-      (lead) =>
-        lead.follow_up_date &&
-        lead.follow_up_date > today
+  const upcomingLeads =
+    useMemo(
+      () => {
+        return pendingLeads.filter(
+          (lead) =>
+            lead.follow_up_date &&
+            lead.follow_up_date >
+              today
+        );
+      },
+      [
+        pendingLeads,
+        today,
+      ]
     );
-  }, [pendingLeads, today]);
 
-  const noDateLeads = useMemo(() => {
-    return pendingLeads.filter(
-      (lead) =>
-        !lead.follow_up_date
+  const noDateLeads =
+    useMemo(
+      () => {
+        return pendingLeads.filter(
+          (lead) =>
+            !lead.follow_up_date
+        );
+      },
+      [
+        pendingLeads,
+      ]
     );
-  }, [pendingLeads]);
 
   // =====================================
   // SORT FOLLOW-UPS
   // =====================================
 
-  const sortedPendingLeads = useMemo(() => {
-    return [
-      ...overdueLeads,
-      ...dueTodayLeads,
-      ...upcomingLeads,
-      ...noDateLeads,
-    ];
-  }, [
-    overdueLeads,
-    dueTodayLeads,
-    upcomingLeads,
-    noDateLeads,
-  ]);
+  const sortedPendingLeads =
+    useMemo(
+      () => {
+        return [
+          ...overdueLeads,
+          ...dueTodayLeads,
+          ...upcomingLeads,
+          ...noDateLeads,
+        ];
+      },
+      [
+        overdueLeads,
+        dueTodayLeads,
+        upcomingLeads,
+        noDateLeads,
+      ]
+    );
 
   // =====================================
   // FILTER + SEARCH
   // =====================================
 
-  const displayedLeads = useMemo(() => {
-    let result: Lead[] = [];
+  const displayedLeads =
+    useMemo(
+      () => {
+        let result: Lead[] =
+          [];
 
-    switch (filter) {
-      case "overdue":
-        result = overdueLeads;
-        break;
+        switch (
+          filter
+        ) {
+          case "overdue":
+            result =
+              overdueLeads;
+            break;
 
-      case "today":
-        result = dueTodayLeads;
-        break;
+          case "today":
+            result =
+              dueTodayLeads;
+            break;
 
-      case "upcoming":
-        result = upcomingLeads;
-        break;
+          case "upcoming":
+            result =
+              upcomingLeads;
+            break;
 
-      case "no-date":
-        result = noDateLeads;
-        break;
+          case "no-date":
+            result =
+              noDateLeads;
+            break;
 
-      case "completed":
-        result = completedLeads;
-        break;
+          case "completed":
+            result =
+              completedLeads;
+            break;
 
-      default:
-        result = sortedPendingLeads;
-    }
+          default:
+            result =
+              sortedPendingLeads;
+        }
 
-    const searchText =
-      search.toLowerCase().trim();
+        const searchText =
+          search
+            .toLowerCase()
+            .trim();
 
-    if (!searchText) {
-      return result;
-    }
+        if (!searchText) {
+          return result;
+        }
 
-    return result.filter(
-      (lead) =>
-        lead.name
-          .toLowerCase()
-          .includes(searchText) ||
-        lead.phone
-          ?.toLowerCase()
-          .includes(searchText) ||
-        lead.email
-          ?.toLowerCase()
-          .includes(searchText) ||
-        lead.status
-          ?.toLowerCase()
-          .includes(searchText) ||
-        lead.follow_up_notes
-          ?.toLowerCase()
-          .includes(searchText)
+        return result.filter(
+          (lead) =>
+            lead.name
+              .toLowerCase()
+              .includes(
+                searchText
+              ) ||
+            lead.phone
+              ?.toLowerCase()
+              .includes(
+                searchText
+              ) ||
+            lead.email
+              ?.toLowerCase()
+              .includes(
+                searchText
+              ) ||
+            lead.status
+              ?.toLowerCase()
+              .includes(
+                searchText
+              ) ||
+            lead.follow_up_notes
+              ?.toLowerCase()
+              .includes(
+                searchText
+              )
+        );
+      },
+      [
+        filter,
+        search,
+        overdueLeads,
+        dueTodayLeads,
+        upcomingLeads,
+        noDateLeads,
+        completedLeads,
+        sortedPendingLeads,
+      ]
     );
-  }, [
-    filter,
-    search,
-    overdueLeads,
-    dueTodayLeads,
-    upcomingLeads,
-    noDateLeads,
-    completedLeads,
-    sortedPendingLeads,
-  ]);
 
   // =====================================
   // LOADING UI
@@ -590,7 +893,9 @@ export default function FollowUpsPage() {
 
                 <button
                   onClick={() =>
-                    router.push("/dashboard")
+                    router.push(
+                      "/dashboard"
+                    )
                   }
                   className="text-blue-400 hover:text-blue-300 mb-4 text-sm"
                 >
@@ -609,8 +914,12 @@ export default function FollowUpsPage() {
               </div>
 
               <button
-                onClick={refreshLeads}
-                disabled={refreshing}
+                onClick={
+                  refreshLeads
+                }
+                disabled={
+                  refreshing
+                }
                 className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-5 py-3 rounded-xl font-semibold"
               >
                 {refreshing
@@ -689,30 +998,29 @@ export default function FollowUpsPage() {
             {/* OVERDUE ALERT */}
 
             {overdueLeads.length > 0 && (
-
               <div className="bg-red-500/10 border border-red-500/50 rounded-xl p-5 mb-8">
 
                 <h2 className="text-red-400 font-bold text-lg">
-
                   🚨 Attention! You have{" "}
-                  {overdueLeads.length} overdue
-                  follow-up
-                  {overdueLeads.length > 1
-                    ? "s"
-                    : ""}
-
+                  {
+                    overdueLeads.length
+                  }{" "}
+                  overdue follow-up
+                  {
+                    overdueLeads.length >
+                    1
+                      ? "s"
+                      : ""
+                  }
                 </h2>
 
                 <p className="text-slate-300 text-sm mt-2">
-
                   Contact these leads as soon as
                   possible to avoid losing potential
                   customers.
-
                 </p>
 
               </div>
-
             )}
 
             {/* SEARCH */}
@@ -724,16 +1032,26 @@ export default function FollowUpsPage() {
                 <input
                   type="text"
                   placeholder="🔍 Search by name, phone, email or notes..."
-                  value={search}
-                  onChange={(e) =>
-                    setSearch(e.target.value)
+                  value={
+                    search
+                  }
+                  onChange={(
+                    e
+                  ) =>
+                    setSearch(
+                      e.target.value
+                    )
                   }
                   className="flex-1 p-3 rounded-lg bg-slate-950 border border-slate-700 text-white outline-none focus:border-blue-500"
                 />
 
                 <select
-                  value={filter}
-                  onChange={(e) =>
+                  value={
+                    filter
+                  }
+                  onChange={(
+                    e
+                  ) =>
                     setFilter(
                       e.target.value as FollowUpFilter
                     )
@@ -767,19 +1085,25 @@ export default function FollowUpsPage() {
 
                 </select>
 
-                {(search ||
-                  filter !== "all") && (
-
+                {(
+                  search ||
+                  filter !==
+                    "all"
+                ) && (
                   <button
                     onClick={() => {
-                      setSearch("");
-                      setFilter("all");
+                      setSearch(
+                        ""
+                      );
+
+                      setFilter(
+                        "all"
+                      );
                     }}
                     className="border border-slate-700 hover:border-red-500 px-5 py-3 rounded-lg transition"
                   >
                     ✕ Clear
                   </button>
-
                 )}
 
               </div>
@@ -793,29 +1117,34 @@ export default function FollowUpsPage() {
               <div>
 
                 <h2 className="text-2xl font-bold">
-
-                  {filter === "completed"
-                    ? "✅ Completed Follow-ups"
-                    : "🔥 Follow-ups"}
-
+                  {
+                    filter ===
+                    "completed"
+                      ? "✅ Completed Follow-ups"
+                      : "🔥 Follow-ups"
+                  }
                 </h2>
 
                 <p className="text-slate-400 text-sm mt-1">
-
                   Showing{" "}
-                  {displayedLeads.length} follow-up
-                  {displayedLeads.length !== 1
-                    ? "s"
-                    : ""}
-
+                  {
+                    displayedLeads.length
+                  }{" "}
+                  follow-up
+                  {
+                    displayedLeads.length !==
+                    1
+                      ? "s"
+                      : ""
+                  }
                 </p>
 
               </div>
 
             </div>
 
-            {displayedLeads.length === 0 ? (
-
+            {displayedLeads.length ===
+            0 ? (
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center">
 
                 <div className="text-5xl mb-4">
@@ -823,36 +1152,35 @@ export default function FollowUpsPage() {
                 </div>
 
                 <h3 className="text-xl font-semibold">
-
                   No follow-ups found
-
                 </h3>
 
                 <p className="text-slate-400 mt-2">
-
                   Try changing your filter or search.
-
                 </p>
 
               </div>
-
             ) : (
-
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
 
                 {displayedLeads.map(
-                  (lead) => {
+                  (
+                    lead
+                  ) => {
 
                     const followUpStatus =
-                      getFollowUpStatus(lead);
+                      getFollowUpStatus(
+                        lead
+                      );
 
                     const isCompleted =
                       lead.follow_up_completed;
 
                     return (
-
                       <div
-                        key={lead.id}
+                        key={
+                          lead.id
+                        }
                         className={`bg-slate-900 border rounded-2xl p-6 transition hover:border-blue-500/50 ${
                           isCompleted
                             ? "border-green-900"
@@ -871,46 +1199,39 @@ export default function FollowUpsPage() {
                           <div>
 
                             <h3 className="text-xl font-bold">
-
-                              👤 {lead.name}
-
+                              👤{" "}
+                              {
+                                lead.name
+                              }
                             </h3>
 
                             {!isCompleted && (
-
                               <span
                                 className={`inline-block mt-2 px-3 py-1 rounded-full text-xs ${followUpStatus.style}`}
                               >
-
-                                {followUpStatus.text}
-
+                                {
+                                  followUpStatus.text
+                                }
                               </span>
-
                             )}
 
                             {isCompleted && (
-
                               <span className="inline-block mt-2 px-3 py-1 rounded-full text-xs bg-green-500/20 text-green-400 border border-green-500/40">
-
                                 ✅ COMPLETED
-
                               </span>
-
                             )}
 
                           </div>
 
                           <span
-                            className={`border px-3 py-1 rounded-full text-xs ${
-                              getPriorityStyle(
-                                lead.follow_up_priority
-                              )
-                            }`}
+                            className={`border px-3 py-1 rounded-full text-xs ${getPriorityStyle(
+                              lead.follow_up_priority
+                            )}`}
                           >
-
-                            {lead.follow_up_priority ||
-                              "Medium"}
-
+                            {
+                              lead.follow_up_priority ||
+                              "Medium"
+                            }
                           </span>
 
                         </div>
@@ -920,49 +1241,41 @@ export default function FollowUpsPage() {
                         <div className="space-y-2 mb-5">
 
                           {lead.phone && (
-
                             <p className="text-slate-400 text-sm">
-
-                              📞 {lead.phone}
-
+                              📞{" "}
+                              {
+                                lead.phone
+                              }
                             </p>
-
                           )}
 
                           {lead.email && (
-
                             <p className="text-slate-400 text-sm break-all">
-
-                              ✉️ {lead.email}
-
+                              ✉️{" "}
+                              {
+                                lead.email
+                              }
                             </p>
-
                           )}
 
                           <p className="text-slate-500 text-xs">
-
                             Lead Status:{" "}
-
                             <span className="text-slate-300">
-
-                              {lead.status}
-
+                              {
+                                lead.status
+                              }
                             </span>
-
                           </p>
 
                         </div>
 
                         {!isCompleted && (
-
                           <>
 
                             {/* DATE */}
 
                             <label className="text-sm text-slate-400">
-
                               📅 Follow-up Date
-
                             </label>
 
                             <input
@@ -972,9 +1285,12 @@ export default function FollowUpsPage() {
                                 ""
                               }
                               disabled={
-                                savingId === lead.id
+                                savingId ===
+                                lead.id
                               }
-                              onChange={(e) =>
+                              onChange={(
+                                e
+                              ) =>
                                 updateFollowUp(
                                   lead.id,
                                   "follow_up_date",
@@ -986,19 +1302,17 @@ export default function FollowUpsPage() {
                             />
 
                             <p className="text-slate-500 text-xs mb-4">
-
-                              {formatDate(
-                                lead.follow_up_date
-                              )}
-
+                              {
+                                formatDate(
+                                  lead.follow_up_date
+                                )
+                              }
                             </p>
 
                             {/* PRIORITY */}
 
                             <label className="text-sm text-slate-400">
-
                               ⚡ Priority
-
                             </label>
 
                             <select
@@ -1007,9 +1321,12 @@ export default function FollowUpsPage() {
                                 "Medium"
                               }
                               disabled={
-                                savingId === lead.id
+                                savingId ===
+                                lead.id
                               }
-                              onChange={(e) =>
+                              onChange={(
+                                e
+                              ) =>
                                 updateFollowUp(
                                   lead.id,
                                   "follow_up_priority",
@@ -1036,9 +1353,7 @@ export default function FollowUpsPage() {
                             {/* NOTES */}
 
                             <label className="text-sm text-slate-400">
-
                               📝 Follow-up Notes
-
                             </label>
 
                             <textarea
@@ -1047,9 +1362,12 @@ export default function FollowUpsPage() {
                                 ""
                               }
                               disabled={
-                                savingId === lead.id
+                                savingId ===
+                                lead.id
                               }
-                              onChange={(e) =>
+                              onChange={(
+                                e
+                              ) =>
                                 updateFollowUp(
                                   lead.id,
                                   "follow_up_notes",
@@ -1074,42 +1392,39 @@ export default function FollowUpsPage() {
                               }
                               className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 p-3 rounded-xl font-semibold mb-3"
                             >
-
                               {generatingId ===
                               lead.id
                                 ? "🤖 Generating..."
                                 : "🤖 Generate AI Message"}
-
                             </button>
 
                             {/* AI MESSAGE */}
 
-                            {aiMessages[lead.id] && (
-
+                            {aiMessages[
+                              lead.id
+                            ] && (
                               <div className="bg-slate-950 border border-purple-500/40 rounded-xl p-4 mb-3">
 
                                 <p className="text-purple-400 text-xs font-semibold mb-2">
-
                                   🤖 BizAI Suggested Message
-
                                 </p>
 
                                 <p className="text-sm text-slate-300 whitespace-pre-wrap">
-
-                                  {aiMessages[
-                                    lead.id
-                                  ]}
-
+                                  {
+                                    aiMessages[
+                                      lead.id
+                                    ]
+                                  }
                                 </p>
 
                               </div>
-
                             )}
 
                             {/* COPY */}
 
-                            {aiMessages[lead.id] && (
-
+                            {aiMessages[
+                              lead.id
+                            ] && (
                               <button
                                 onClick={() =>
                                   copyMessage(
@@ -1118,20 +1433,18 @@ export default function FollowUpsPage() {
                                 }
                                 className="w-full border border-purple-500 hover:bg-purple-500/10 p-3 rounded-xl font-semibold mb-3"
                               >
-
                                 {copiedId ===
                                 lead.id
                                   ? "✅ Copied!"
                                   : "📋 Copy Message"}
-
                               </button>
-
                             )}
 
                             {/* WHATSAPP */}
 
-                            {aiMessages[lead.id] && (
-
+                            {aiMessages[
+                              lead.id
+                            ] && (
                               <button
                                 onClick={() =>
                                   openWhatsApp(
@@ -1140,11 +1453,8 @@ export default function FollowUpsPage() {
                                 }
                                 className="w-full bg-green-600 hover:bg-green-700 p-3 rounded-xl font-semibold mb-3"
                               >
-
                                 📱 Send via WhatsApp
-
                               </button>
-
                             )}
 
                             {/* COMPLETE */}
@@ -1158,70 +1468,58 @@ export default function FollowUpsPage() {
                                 )
                               }
                               disabled={
-                                savingId === lead.id
+                                savingId ===
+                                lead.id
                               }
                               className="w-full bg-green-700 hover:bg-green-800 disabled:opacity-50 p-3 rounded-xl font-semibold"
                             >
-
                               {savingId ===
                               lead.id
                                 ? "Saving..."
                                 : "✅ Mark Follow-up Complete"}
-
                             </button>
 
                           </>
-
                         )}
 
                         {/* COMPLETED ACTIONS */}
 
                         {isCompleted && (
-
                           <>
 
                             {lead.follow_up_date && (
-
                               <div className="bg-slate-950 rounded-xl p-4 mt-4 mb-4">
 
                                 <p className="text-slate-400 text-xs">
-
                                   Follow-up Date
-
                                 </p>
 
                                 <p className="text-white mt-1">
-
                                   📅{" "}
-
-                                  {formatDate(
-                                    lead.follow_up_date
-                                  )}
-
+                                  {
+                                    formatDate(
+                                      lead.follow_up_date
+                                    )
+                                  }
                                 </p>
 
                               </div>
-
                             )}
 
                             {lead.follow_up_notes && (
-
                               <div className="bg-slate-950 rounded-xl p-4 mb-4">
 
                                 <p className="text-slate-400 text-xs mb-2">
-
                                   Notes
-
                                 </p>
 
                                 <p className="text-slate-300 text-sm">
-
-                                  {lead.follow_up_notes}
-
+                                  {
+                                    lead.follow_up_notes
+                                  }
                                 </p>
 
                               </div>
-
                             )}
 
                             <button
@@ -1233,35 +1531,29 @@ export default function FollowUpsPage() {
                                 )
                               }
                               disabled={
-                                savingId === lead.id
+                                savingId ===
+                                lead.id
                               }
                               className="w-full border border-blue-500 text-blue-400 hover:bg-blue-500/10 disabled:opacity-50 p-3 rounded-xl font-semibold"
                             >
-
                               🔄 Move Back to Pending
-
                             </button>
 
                           </>
-
                         )}
 
                       </div>
-
                     );
                   }
                 )}
 
               </div>
-
             )}
 
             {/* FOOTER */}
 
             <div className="text-center text-slate-500 text-sm mt-12 pb-5">
-
               🔥 BizAI Follow-up Management • Never miss an important business opportunity
-
             </div>
 
           </div>

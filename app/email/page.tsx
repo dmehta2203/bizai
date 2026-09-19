@@ -129,12 +129,20 @@ function EmailContent() {
         data: { session },
       } = await supabase.auth.getSession();
 
-      if (!session?.user) {
-        window.location.href = "/login";
+      if (
+        !session?.user ||
+        !session.access_token
+      ) {
+        window.location.href =
+          "/login";
+
         return;
       }
 
-      const { data, error } =
+      const {
+        data,
+        error,
+      } =
         await supabase
           .from("customers")
           .select(`
@@ -159,10 +167,10 @@ function EmailContent() {
         throw error;
       }
 
-      setCustomers(data || []);
-
+      setCustomers(
+        data || []
+      );
     } catch (error) {
-
       console.error(
         "Customer loading error:",
         error
@@ -171,11 +179,8 @@ function EmailContent() {
       setError(
         "Unable to load customers."
       );
-
     } finally {
-
       setLoading(false);
-
     }
   }
 
@@ -186,7 +191,8 @@ function EmailContent() {
   const selectedCustomerData =
     customers.find(
       (customer) =>
-        customer.id === selectedCustomer
+        customer.id ===
+        selectedCustomer
     );
 
   // ==========================
@@ -196,11 +202,17 @@ function EmailContent() {
   function selectTemplate(
     template: EmailTemplate
   ) {
-    setSelectedTemplate(template.id);
+    setSelectedTemplate(
+      template.id
+    );
 
-    setSubject(template.subject);
+    setSubject(
+      template.subject
+    );
 
-    setAiPurpose(template.purpose);
+    setAiPurpose(
+      template.purpose
+    );
 
     setMessage("");
 
@@ -246,6 +258,59 @@ function EmailContent() {
 
       setGenerating(true);
 
+      // ==========================
+      // GET CURRENT SESSION
+      // ==========================
+
+      const {
+        data: { session },
+        error: sessionError,
+      } =
+        await supabase.auth.getSession();
+
+      if (
+        sessionError
+      ) {
+        console.error(
+          "AI email session error:",
+          sessionError
+        );
+
+        setError(
+          "Unable to verify your login session."
+        );
+
+        return;
+      }
+
+      if (!session?.user) {
+        setError(
+          "Please login before generating an email."
+        );
+
+        window.location.href =
+          "/login";
+
+        return;
+      }
+
+      if (!session.access_token) {
+        setError(
+          "Your authentication session is missing. Please log in again."
+        );
+
+        await supabase.auth.signOut();
+
+        window.location.href =
+          "/login";
+
+        return;
+      }
+
+      // ==========================
+      // GENERATE EMAIL
+      // ==========================
+
       const response =
         await fetch(
           "/api/generate-email",
@@ -255,23 +320,40 @@ function EmailContent() {
             headers: {
               "Content-Type":
                 "application/json",
+
+              // IMPORTANT:
+              // The AI generation API now
+              // requires an authenticated
+              // Supabase access token.
+              Authorization:
+                `Bearer ${session.access_token}`,
             },
 
-            body: JSON.stringify({
-              customerName:
-                selectedCustomerData.name,
+            body:
+              JSON.stringify({
+                customerName:
+                  selectedCustomerData.name,
 
-              businessName:
-                selectedCustomerData.business_name,
+                businessName:
+                  selectedCustomerData.business_name,
 
-              purpose:
-                aiPurpose.trim(),
-            }),
+                purpose:
+                  aiPurpose.trim(),
+              }),
           }
         );
 
-      const result =
-        await response.json();
+      let result: any;
+
+      try {
+        result =
+          await response.json();
+      } catch {
+        result = {
+          error:
+            "Invalid server response.",
+        };
+      }
 
       if (!response.ok) {
         throw new Error(
@@ -287,26 +369,25 @@ function EmailContent() {
       setSuccess(
         "AI generated your email successfully! You can edit it before sending."
       );
-
     } catch (error) {
-
       console.error(
         "AI Email Error:",
         error
       );
 
-      if (error instanceof Error) {
-        setError(error.message);
+      if (
+        error instanceof Error
+      ) {
+        setError(
+          error.message
+        );
       } else {
         setError(
           "Unable to generate email."
         );
       }
-
     } finally {
-
       setGenerating(false);
-
     }
   }
 
@@ -343,7 +424,9 @@ function EmailContent() {
         return;
       }
 
-      if (!selectedCustomerData?.email) {
+      if (
+        !selectedCustomerData?.email
+      ) {
         setError(
           "This customer does not have an email address."
         );
@@ -353,12 +436,45 @@ function EmailContent() {
 
       setSending(true);
 
+      // ==========================
+      // GET CURRENT SESSION
+      // ==========================
+
       const {
         data: { session },
+        error: sessionError,
       } =
         await supabase.auth.getSession();
 
+      if (
+        sessionError
+      ) {
+        console.error(
+          "Session error:",
+          sessionError
+        );
+
+        setError(
+          "Unable to verify your login session."
+        );
+
+        return;
+      }
+
       if (!session?.user) {
+        window.location.href =
+          "/login";
+
+        return;
+      }
+
+      if (!session.access_token) {
+        setError(
+          "Your authentication session is missing. Please log in again."
+        );
+
+        await supabase.auth.signOut();
+
         window.location.href =
           "/login";
 
@@ -378,26 +494,39 @@ function EmailContent() {
             headers: {
               "Content-Type":
                 "application/json",
+
+              Authorization:
+                `Bearer ${session.access_token}`,
             },
 
-            body: JSON.stringify({
-              to:
-                selectedCustomerData.email,
+            body:
+              JSON.stringify({
+                to:
+                  selectedCustomerData.email,
 
-              subject:
-                subject.trim(),
+                subject:
+                  subject.trim(),
 
-              message:
-                message.trim(),
+                message:
+                  message.trim(),
 
-              customerName:
-                selectedCustomerData.name,
-            }),
+                customerName:
+                  selectedCustomerData.name,
+              }),
           }
         );
 
-      const result =
-        await response.json();
+      let result: any;
+
+      try {
+        result =
+          await response.json();
+      } catch {
+        result = {
+          error:
+            "Invalid server response.",
+        };
+      }
 
       if (!response.ok) {
         throw new Error(
@@ -418,7 +547,6 @@ function EmailContent() {
             "customer_activities"
           )
           .insert({
-
             user_id:
               session.user.id,
 
@@ -430,7 +558,6 @@ function EmailContent() {
 
             activity_message:
               `Email sent to ${selectedCustomerData.email}: ${subject.trim()}`,
-
           });
 
       if (activityError) {
@@ -448,15 +575,15 @@ function EmailContent() {
       setMessage("");
       setAiPurpose("");
       setSelectedTemplate("");
-
     } catch (error) {
-
       console.error(
         "Email error:",
         error
       );
 
-      if (error instanceof Error) {
+      if (
+        error instanceof Error
+      ) {
         setError(
           error.message
         );
@@ -465,11 +592,8 @@ function EmailContent() {
           "Something went wrong while sending the email."
         );
       }
-
     } finally {
-
       setSending(false);
-
     }
   }
 
@@ -478,11 +602,8 @@ function EmailContent() {
   // ==========================
 
   if (loading) {
-
     return (
-
       <main className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
-
         <div className="text-center">
 
           <div className="text-6xl animate-pulse">
@@ -494,9 +615,7 @@ function EmailContent() {
           </h2>
 
         </div>
-
       </main>
-
     );
   }
 
@@ -505,7 +624,6 @@ function EmailContent() {
   // ==========================
 
   return (
-
     <main className="min-h-screen bg-slate-950 text-white p-4 md:p-8">
 
       <div className="max-w-6xl mx-auto">
@@ -529,32 +647,21 @@ function EmailContent() {
 
         </div>
 
-
         {/* SUCCESS */}
 
         {success && (
-
           <div className="mb-6 bg-green-500/10 border border-green-500/30 text-green-400 rounded-xl p-4">
-
             ✅ {success}
-
           </div>
-
         )}
-
 
         {/* ERROR */}
 
         {error && (
-
           <div className="mb-6 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl p-4">
-
             ⚠️ {error}
-
           </div>
-
         )}
-
 
         {/* EMAIL TEMPLATES */}
 
@@ -577,16 +684,16 @@ function EmailContent() {
 
           </div>
 
-
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
 
             {emailTemplates.map(
               (template) => (
-
                 <button
                   key={template.id}
                   onClick={() =>
-                    selectTemplate(template)
+                    selectTemplate(
+                      template
+                    )
                   }
                   className={`text-left rounded-2xl p-5 border transition hover:-translate-y-1 ${
                     selectedTemplate ===
@@ -597,32 +704,24 @@ function EmailContent() {
                 >
 
                   <div className="text-4xl">
-
                     {template.icon}
-
                   </div>
 
                   <h3 className="font-bold mt-4">
-
                     {template.title}
-
                   </h3>
 
                   <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-
                     {template.description}
-
                   </p>
 
                 </button>
-
               )
             )}
 
           </div>
 
         </div>
-
 
         {/* EMAIL FORM */}
 
@@ -633,22 +732,20 @@ function EmailContent() {
           <div className="mb-6">
 
             <label className="text-sm font-semibold text-slate-300">
-
               👤 Select Customer
-
             </label>
 
             <select
               value={selectedCustomer}
-              onChange={(event) => {
-
+              onChange={(
+                event
+              ) => {
                 setSelectedCustomer(
                   event.target.value
                 );
 
                 setSuccess("");
                 setError("");
-
               }}
               className="w-full mt-3 bg-slate-950 border border-slate-700 rounded-xl px-5 py-4 outline-none focus:border-blue-500"
             >
@@ -659,20 +756,16 @@ function EmailContent() {
 
               {customers.map(
                 (customer) => (
-
                   <option
                     key={customer.id}
                     value={customer.id}
                   >
-
                     {customer.name}
 
                     {customer.email
                       ? ` — ${customer.email}`
                       : " — No Email"}
-
                   </option>
-
                 )
               )}
 
@@ -680,89 +773,64 @@ function EmailContent() {
 
           </div>
 
-
           {/* CUSTOMER DETAILS */}
 
           {selectedCustomerData && (
-
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-5 mb-6">
 
               <h3 className="font-bold text-lg">
-
                 👤 Customer Details
-
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 text-sm">
 
                 <div>
-
                   <p className="text-slate-500">
                     Name
                   </p>
 
                   <p className="font-semibold mt-1">
-
                     {selectedCustomerData.name}
-
                   </p>
-
                 </div>
 
-
                 <div>
-
                   <p className="text-slate-500">
                     Email
                   </p>
 
                   <p className="font-semibold text-blue-400 mt-1">
-
                     {selectedCustomerData.email ||
                       "Not available"}
-
                   </p>
-
                 </div>
 
-
                 <div>
-
                   <p className="text-slate-500">
                     Phone
                   </p>
 
                   <p className="font-semibold mt-1">
-
                     {selectedCustomerData.phone ||
                       "Not available"}
-
                   </p>
-
                 </div>
 
-
                 <div>
-
                   <p className="text-slate-500">
                     Business
                   </p>
 
                   <p className="font-semibold mt-1">
-
                     {selectedCustomerData.business_name ||
                       "Not available"}
-
                   </p>
-
                 </div>
 
               </div>
 
             </div>
-
           )}
-
 
           {/* AI EMAIL WRITER */}
 
@@ -789,53 +857,52 @@ function EmailContent() {
 
             </div>
 
-
             <textarea
               value={aiPurpose}
-              onChange={(event) => {
-
+              onChange={(
+                event
+              ) => {
                 setAiPurpose(
                   event.target.value
                 );
 
                 setSelectedTemplate("");
-
               }}
               placeholder="Example: Write a friendly follow-up email asking the customer if they are interested in our services..."
               rows={4}
               className="w-full mt-5 bg-slate-950 border border-slate-700 rounded-xl px-5 py-4 outline-none focus:border-purple-500 resize-none"
             />
 
-
             <button
-              onClick={generateEmail}
-              disabled={generating}
+              onClick={
+                generateEmail
+              }
+              disabled={
+                generating
+              }
               className="mt-4 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-3 rounded-xl font-semibold transition"
             >
-
               {generating
                 ? "🤖 Generating..."
                 : "✨ Generate with AI"}
-
             </button>
 
           </div>
-
 
           {/* SUBJECT */}
 
           <div className="mb-6">
 
             <label className="text-sm font-semibold text-slate-300">
-
               📝 Email Subject
-
             </label>
 
             <input
               type="text"
               value={subject}
-              onChange={(event) =>
+              onChange={(
+                event
+              ) =>
                 setSubject(
                   event.target.value
                 )
@@ -846,20 +913,19 @@ function EmailContent() {
 
           </div>
 
-
           {/* MESSAGE */}
 
           <div className="mb-6">
 
             <label className="text-sm font-semibold text-slate-300">
-
               💬 Email Message
-
             </label>
 
             <textarea
               value={message}
-              onChange={(event) =>
+              onChange={(
+                event
+              ) =>
                 setMessage(
                   event.target.value
                 )
@@ -871,20 +937,15 @@ function EmailContent() {
 
           </div>
 
-
           {/* EMAIL PREVIEW */}
 
           {selectedCustomerData &&
             message && (
-
               <div className="bg-slate-950 border border-slate-700 rounded-xl p-5 mb-6">
 
                 <p className="text-slate-500 text-sm font-semibold">
-
                   👀 EMAIL PREVIEW
-
                 </p>
-
 
                 <div className="mt-5">
 
@@ -893,14 +954,11 @@ function EmailContent() {
                   </p>
 
                   <p className="text-blue-400 mt-1">
-
                     {selectedCustomerData.email ||
                       "No email"}
-
                   </p>
 
                 </div>
-
 
                 <div className="mt-4">
 
@@ -909,95 +967,75 @@ function EmailContent() {
                   </p>
 
                   <p className="font-semibold mt-1">
-
                     {subject ||
                       "No subject"}
-
                   </p>
 
                 </div>
 
-
                 <div className="border-t border-slate-800 mt-5 pt-5 whitespace-pre-wrap text-slate-300 leading-relaxed">
-
                   {message}
-
                 </div>
 
               </div>
-
             )}
-
 
           {/* SEND BUTTON */}
 
           <button
-            onClick={sendEmail}
-            disabled={sending || generating}
+            onClick={
+              sendEmail
+            }
+            disabled={
+              sending ||
+              generating
+            }
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed py-4 rounded-xl font-bold text-lg transition"
           >
-
             {sending
               ? "⏳ Sending Email..."
               : "📧 Send Email"}
-
           </button>
 
         </div>
-
 
         {/* AI INFO */}
 
         <div className="mt-6 bg-purple-500/10 border border-purple-500/20 rounded-2xl p-5">
 
           <h3 className="font-bold">
-
             🤖 BizAI Email Assistant
-
           </h3>
 
           <p className="text-slate-400 mt-2 text-sm">
-
             Choose a ready-made template or describe
             your own requirement. BizAI will generate
             a professional email that you can review
             and edit before sending.
-
           </p>
 
         </div>
 
-
         {/* CUSTOMER COUNT */}
 
         <div className="mt-6 text-center text-slate-500 text-sm">
-
           👥 {customers.length} customer(s)
           available for communication
-
         </div>
 
       </div>
-
     </main>
-
   );
 }
-
 
 // ==========================
 // PROTECTED PAGE
 // ==========================
 
 export default function EmailPage() {
-
   return (
-
     <ProtectedRoute>
-
       <EmailContent />
-
     </ProtectedRoute>
-
   );
 }

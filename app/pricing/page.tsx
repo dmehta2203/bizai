@@ -220,7 +220,6 @@ export default function PricingPage() {
 
       if (!session?.user) {
         setCurrentSubscription(null);
-
         setUserId(null);
 
         return;
@@ -490,9 +489,17 @@ export default function PricingPage() {
 
     setLoadingPlan(plan.name);
 
+    // Capture these values for this
+    // specific payment attempt.
+    const selectedPlanName =
+      plan.name;
+
+    const selectedCycle =
+      selectedBillingCycle;
+
     try {
       // ========================
-      // GET SESSION
+      // GET AUTH SESSION
       // ========================
 
       const {
@@ -502,9 +509,16 @@ export default function PricingPage() {
         await supabase.auth.getSession();
 
       if (sessionError) {
+        console.error(
+          "Session error:",
+          sessionError
+        );
+
         alert(
           "Unable to check your login session."
         );
+
+        setLoadingPlan(null);
 
         return;
       }
@@ -514,13 +528,32 @@ export default function PricingPage() {
           "Please login before purchasing a plan."
         );
 
+        setLoadingPlan(null);
+
         router.push("/login");
 
         return;
       }
 
-      const loggedInUserId =
-        session.user.id;
+      if (!session.access_token) {
+        alert(
+          "Your authentication session is missing. Please log in again."
+        );
+
+        await supabase.auth.signOut();
+
+        setLoadingPlan(null);
+
+        router.push("/login");
+
+        return;
+      }
+
+      // Keep the authenticated user ID
+      // only for local UI state.
+      setUserId(
+        session.user.id
+      );
 
       // ========================
       // LOAD RAZORPAY
@@ -534,6 +567,8 @@ export default function PricingPage() {
           "Failed to load Razorpay. Please check your internet connection."
         );
 
+        setLoadingPlan(null);
+
         return;
       }
 
@@ -541,6 +576,8 @@ export default function PricingPage() {
         alert(
           "Razorpay is not available. Please refresh and try again."
         );
+
+        setLoadingPlan(null);
 
         return;
       }
@@ -558,20 +595,33 @@ export default function PricingPage() {
             headers: {
               "Content-Type":
                 "application/json",
+
+              Authorization:
+                `Bearer ${session.access_token}`,
             },
 
             body:
               JSON.stringify({
-                plan: plan.name,
+                plan:
+                  selectedPlanName,
 
                 billingCycle:
-                  selectedBillingCycle,
+                  selectedCycle,
               }),
           }
         );
 
-      const orderData =
-        await orderResponse.json();
+      let orderData: any;
+
+      try {
+        orderData =
+          await orderResponse.json();
+      } catch {
+        orderData = {
+          error:
+            "Invalid server response.",
+        };
+      }
 
       console.log(
         "Order Data:",
@@ -584,6 +634,8 @@ export default function PricingPage() {
             "Failed to create payment order."
         );
 
+        setLoadingPlan(null);
+
         return;
       }
 
@@ -591,6 +643,8 @@ export default function PricingPage() {
         alert(
           "Payment order was not created properly."
         );
+
+        setLoadingPlan(null);
 
         return;
       }
@@ -614,7 +668,7 @@ export default function PricingPage() {
         name: "BizAI",
 
         description:
-          `${plan.name} ${BILLING_DETAILS[selectedBillingCycle].label} Subscription`,
+          `${selectedPlanName} ${BILLING_DETAILS[selectedCycle].label} Subscription`,
 
         order_id:
           orderData.order.id,
@@ -625,8 +679,47 @@ export default function PricingPage() {
           ) {
             try {
               setLoadingPlan(
-                plan.name
+                selectedPlanName
               );
+
+              // ====================
+              // GET FRESH SESSION
+              // ====================
+
+              const {
+                data: {
+                  session:
+                    verifySession,
+                },
+                error:
+                  verifySessionError,
+              } =
+                await supabase.auth.getSession();
+
+              if (
+                verifySessionError ||
+                !verifySession?.user ||
+                !verifySession.access_token
+              ) {
+                console.error(
+                  "Verification session error:",
+                  verifySessionError
+                );
+
+                alert(
+                  "Your login session is no longer valid. Please log in again."
+                );
+
+                setLoadingPlan(null);
+
+                await supabase.auth.signOut();
+
+                router.push(
+                  "/login"
+                );
+
+                return;
+              }
 
               // ====================
               // VERIFY PAYMENT
@@ -641,8 +734,21 @@ export default function PricingPage() {
                     headers: {
                       "Content-Type":
                         "application/json",
+
+                      Authorization:
+                        `Bearer ${verifySession.access_token}`,
                     },
 
+                    // IMPORTANT:
+                    // Do NOT send userId.
+                    //
+                    // The verification API now
+                    // gets the user from the
+                    // authenticated access token.
+                    //
+                    // Do not trust plan/billingCycle
+                    // here either. The server gets
+                    // them from Razorpay order notes.
                     body:
                       JSON.stringify({
                         razorpay_payment_id:
@@ -653,21 +759,21 @@ export default function PricingPage() {
 
                         razorpay_signature:
                           response.razorpay_signature,
-
-                        plan:
-                          plan.name,
-
-                        billingCycle:
-                          selectedBillingCycle,
-
-                        userId:
-                          loggedInUserId,
                       }),
                   }
                 );
 
-              const verifyData =
-                await verifyResponse.json();
+              let verifyData: any;
+
+              try {
+                verifyData =
+                  await verifyResponse.json();
+              } catch {
+                verifyData = {
+                  error:
+                    "Invalid verification response.",
+                };
+              }
 
               console.log(
                 "Verification Data:",
@@ -683,22 +789,30 @@ export default function PricingPage() {
                 verifyData.success
               ) {
                 alert(
-                  `🎉 Payment Successful!\n\nYour ${plan.name} ${BILLING_DETAILS[selectedBillingCycle].label} plan has been activated successfully!`
+                  `🎉 Payment Successful!\n\nYour ${selectedPlanName} ${BILLING_DETAILS[selectedCycle].label} plan has been activated successfully!`
                 );
 
                 await loadSubscription();
+
+                setLoadingPlan(null);
 
                 router.push(
                   "/subscription"
                 );
 
                 router.refresh();
-              } else {
-                alert(
-                  verifyData.error ||
-                    "Payment verification failed."
-                );
+
+                return;
               }
+
+              // ====================
+              // VERIFICATION FAILED
+              // ====================
+
+              alert(
+                verifyData.error ||
+                  "Payment verification failed."
+              );
 
               setLoadingPlan(null);
             } catch (error) {
@@ -779,9 +893,8 @@ export default function PricingPage() {
       alert(
         "Something went wrong while starting the payment."
       );
-    } finally {
-      // Razorpay handler controls
-      // loading state after opening
+
+      setLoadingPlan(null);
     }
   }
 
@@ -815,9 +928,7 @@ export default function PricingPage() {
   if (loadingSubscription) {
     return (
       <main className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
-
         <div className="text-center">
-
           <div className="text-5xl animate-pulse mb-5">
             💎
           </div>
@@ -829,9 +940,7 @@ export default function PricingPage() {
           <p className="text-slate-400 mt-2">
             Checking your subscription.
           </p>
-
         </div>
-
       </main>
     );
   }
@@ -846,41 +955,31 @@ export default function PricingPage() {
       {/* HERO */}
 
       <section className="px-6 pt-16 md:pt-20 pb-10 text-center">
-
         <div className="max-w-4xl mx-auto">
 
           <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 px-4 py-2 rounded-full text-sm font-semibold">
-
             ✨ BIZAI SUBSCRIPTIONS
-
           </div>
 
           <h1 className="text-4xl md:text-6xl font-bold mt-7 leading-tight">
-
             Simple Pricing for
 
             <span className="block text-blue-500 mt-2">
               Smarter Businesses
             </span>
-
           </h1>
 
           <p className="text-slate-400 text-lg mt-6 max-w-2xl mx-auto leading-relaxed">
-
             Choose a flexible plan that fits your business.
             Upgrade anytime as your business grows.
-
           </p>
 
         </div>
-
       </section>
-
 
       {/* CURRENT SUBSCRIPTION */}
 
       {currentSubscription?.plan && (
-
         <section className="max-w-3xl mx-auto px-6 mb-10">
 
           <div className="bg-gradient-to-r from-blue-600/20 via-purple-600/20 to-slate-900 border border-blue-500/30 rounded-2xl p-6 text-center">
@@ -890,49 +989,35 @@ export default function PricingPage() {
             </p>
 
             <h2 className="text-3xl font-bold mt-3">
-
               💎 {currentSubscription.plan}
-
             </h2>
 
             <div className="flex flex-wrap justify-center gap-3 mt-4">
 
               <span className="bg-green-500/15 border border-green-500/30 text-green-400 px-4 py-2 rounded-full text-sm">
-
                 ● {currentSubscription.status}
-
               </span>
 
               {currentSubscription.billing_cycle && (
-
                 <span className="bg-blue-500/15 border border-blue-500/30 text-blue-300 px-4 py-2 rounded-full text-sm capitalize">
-
-                  🔁 {
+                  🔁{" "}
+                  {
                     currentSubscription.billing_cycle
                   }
-
                 </span>
-
               )}
 
             </div>
 
             {currentSubscription.current_period_end && (
-
               <p className="text-slate-400 text-sm mt-5">
-
                 📅 Valid until{" "}
-
                 <span className="text-white font-semibold">
-
                   {formatDate(
                     currentSubscription.current_period_end
                   )}
-
                 </span>
-
               </p>
-
             )}
 
             <button
@@ -949,9 +1034,7 @@ export default function PricingPage() {
           </div>
 
         </section>
-
       )}
-
 
       {/* BILLING SELECTOR */}
 
@@ -978,18 +1061,14 @@ export default function PricingPage() {
                   cycle;
 
                 return (
-
                   <button
                     key={cycle}
-
                     type="button"
-
                     onClick={() =>
                       setSelectedBillingCycle(
                         cycle
                       )
                     }
-
                     className={`relative py-4 px-4 rounded-xl font-semibold transition ${
                       selected
                         ? "bg-blue-600 text-white shadow-lg"
@@ -998,42 +1077,30 @@ export default function PricingPage() {
                   >
 
                     <div className="text-lg">
-
-                      {details.icon}
-
-                      {" "}
-
+                      {details.icon}{" "}
                       {details.label}
-
                     </div>
 
-                    <div className={`text-xs mt-1 ${
-                      selected
-                        ? "text-blue-100"
-                        : "text-slate-500"
-                    }`}>
-
+                    <div
+                      className={`text-xs mt-1 ${
+                        selected
+                          ? "text-blue-100"
+                          : "text-slate-500"
+                      }`}
+                    >
                       Valid for{" "}
-
                       {details.days} days
-
                     </div>
 
                     {cycle ===
                       "quarterly" && (
-
                       <span className="absolute -top-3 right-3 bg-green-500 text-white text-[10px] px-2 py-1 rounded-full">
-
                         BEST VALUE
-
                       </span>
-
                     )}
 
                   </button>
-
                 );
-
               }
             )}
 
@@ -1042,7 +1109,6 @@ export default function PricingPage() {
         </div>
 
       </section>
-
 
       {/* PRICING CARDS */}
 
@@ -1076,10 +1142,8 @@ export default function PricingPage() {
                 ];
 
               return (
-
                 <div
                   key={plan.name}
-
                   className={`relative rounded-3xl border p-8 transition duration-300 hover:-translate-y-2 ${
                     plan.popular
                       ? "border-blue-500 bg-gradient-to-b from-blue-900/40 via-slate-900 to-slate-900 shadow-2xl shadow-blue-900/20"
@@ -1092,61 +1156,43 @@ export default function PricingPage() {
                   {/* BADGE */}
 
                   {current && (
-
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2">
 
                       <span className="bg-green-600 px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap">
-
                         ✓ CURRENT PLAN
-
                       </span>
 
                     </div>
-
                   )}
 
                   {plan.popular &&
                     !current && (
+                      <div className="absolute -top-4 left-1/2 -translate-x-1/2">
 
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                        <span className="bg-blue-600 px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap">
+                          ⭐ MOST POPULAR
+                        </span>
 
-                      <span className="bg-blue-600 px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap">
-
-                        ⭐ MOST POPULAR
-
-                      </span>
-
-                    </div>
-
-                  )}
-
+                      </div>
+                    )}
 
                   {/* ICON */}
 
                   <div className="text-5xl mb-6">
-
                     {plan.icon}
-
                   </div>
-
 
                   {/* NAME */}
 
                   <h2 className="text-3xl font-bold">
-
                     {plan.name}
-
                   </h2>
-
 
                   {/* DESCRIPTION */}
 
                   <p className="text-slate-400 mt-4 min-h-[72px] leading-relaxed">
-
                     {plan.description}
-
                   </p>
-
 
                   {/* PRICE */}
 
@@ -1155,33 +1201,22 @@ export default function PricingPage() {
                     <div className="flex items-end gap-2">
 
                       <span className="text-5xl font-bold">
-
                         ₹{price}
-
                       </span>
 
                       <span className="text-slate-400 mb-2">
-
                         {billing.shortLabel}
-
                       </span>
 
                     </div>
 
                     <p className="text-slate-500 text-sm mt-3">
-
-                      {billing.icon}
-
-                      {" "}
-
+                      {billing.icon}{" "}
                       Full access for{" "}
-
                       {billing.days} days
-
                     </p>
 
                   </div>
-
 
                   {/* FEATURES */}
 
@@ -1189,51 +1224,39 @@ export default function PricingPage() {
 
                     {plan.features.map(
                       (feature) => (
-
                         <div
                           key={feature}
-
                           className="flex items-start gap-3"
                         >
 
                           <span className="text-green-400 font-bold">
-
                             ✓
-
                           </span>
 
                           <span className="text-slate-300 text-sm">
-
                             {feature}
-
                           </span>
 
                         </div>
-
                       )
                     )}
 
                   </div>
 
-
                   {/* BUTTON */}
 
                   <button
-
                     type="button"
-
                     onClick={() =>
                       handlePayment(
                         plan
                       )
                     }
-
                     disabled={
                       loadingPlan !== null ||
                       current ||
                       lower
                     }
-
                     className={`w-full py-4 rounded-xl font-semibold transition ${
                       current
                         ? "bg-green-600 cursor-not-allowed"
@@ -1244,57 +1267,43 @@ export default function PricingPage() {
                         : "bg-slate-800 hover:bg-slate-700 border border-slate-700"
                     } disabled:opacity-60`}
                   >
-
                     {getButtonText(plan)}
-
                   </button>
 
                 </div>
-
               );
-
             }
           )}
 
         </div>
 
-
         {/* LOGIN */}
 
         {!userId && (
-
           <div className="max-w-2xl mx-auto mt-12 text-center">
 
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
 
               <p className="text-slate-300">
-
                 Already have a BizAI account?
-
               </p>
 
               <button
                 type="button"
-
                 onClick={() =>
                   router.push(
                     "/login"
                   )
                 }
-
                 className="text-blue-400 hover:text-blue-300 font-semibold mt-3"
               >
-
                 Login to manage your subscription →
-
               </button>
 
             </div>
 
           </div>
-
         )}
-
 
         {/* TRUST */}
 
@@ -1316,7 +1325,6 @@ export default function PricingPage() {
 
           </div>
 
-
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 text-center">
 
             <div className="text-2xl">
@@ -1332,7 +1340,6 @@ export default function PricingPage() {
             </p>
 
           </div>
-
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 text-center">
 
@@ -1352,21 +1359,16 @@ export default function PricingPage() {
 
         </div>
 
-
         {/* FOOTER */}
 
         <div className="text-center mt-14">
 
           <p className="text-slate-500">
-
             🔒 Secure payments powered by Razorpay
-
           </p>
 
           <p className="text-slate-600 text-sm mt-3">
-
             BizAI • Smart AI Business Management
-
           </p>
 
         </div>
