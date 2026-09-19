@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // ======================================
 // OPENAI CLIENT
@@ -46,7 +47,6 @@ export async function POST(
   request: NextRequest
 ) {
   try {
-
     // ======================================
     // GET AUTHORIZATION HEADER
     // ======================================
@@ -74,10 +74,12 @@ export async function POST(
     // ======================================
 
     const accessToken =
-      authorization.replace(
-        "Bearer ",
-        ""
-      ).trim();
+      authorization
+        .replace(
+          "Bearer ",
+          ""
+        )
+        .trim();
 
     if (!accessToken) {
       return NextResponse.json(
@@ -108,7 +110,6 @@ export async function POST(
       authError ||
       !authenticatedUser
     ) {
-
       console.error(
         "Authentication error:",
         authError
@@ -202,7 +203,6 @@ export async function POST(
     // ======================================
 
     if (subscriptionError) {
-
       console.error(
         "Subscription error:",
         subscriptionError
@@ -224,7 +224,6 @@ export async function POST(
     // ======================================
 
     if (!subscription) {
-
       return NextResponse.json(
         {
           error:
@@ -243,7 +242,6 @@ export async function POST(
     if (
       subscription.current_period_end
     ) {
-
       const expiryDate =
         new Date(
           subscription.current_period_end
@@ -255,7 +253,6 @@ export async function POST(
       if (
         expiryDate < today
       ) {
-
         return NextResponse.json(
           {
             error:
@@ -282,7 +279,6 @@ export async function POST(
         subscription.plan
       )
     ) {
-
       return NextResponse.json(
         {
           error:
@@ -290,6 +286,40 @@ export async function POST(
         },
         {
           status: 403,
+        }
+      );
+    }
+
+    // ======================================
+    // API RATE LIMIT
+    // 20 REQUESTS PER 60 SECONDS
+    // ======================================
+
+    const rateLimit =
+      await checkRateLimit(
+        userId,
+        "/api/ai",
+        20,
+        60
+      );
+
+    if (!rateLimit.allowed) {
+      console.warn(
+        "AI rate limit triggered for user:",
+        userId
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            rateLimit.error ||
+            "Too many AI requests. Please wait a moment and try again.",
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": "60",
+          },
         }
       );
     }
@@ -306,8 +336,9 @@ export async function POST(
       appointmentsResult,
       salesResult,
     ] = await Promise.all([
-
+      // ====================================
       // CUSTOMERS
+      // ====================================
 
       supabase
         .from("customers")
@@ -317,7 +348,9 @@ export async function POST(
           userId
         ),
 
+      // ====================================
       // LEADS
+      // ====================================
 
       supabase
         .from("leads")
@@ -327,7 +360,9 @@ export async function POST(
           userId
         ),
 
+      // ====================================
       // TASKS
+      // ====================================
 
       supabase
         .from("tasks")
@@ -337,7 +372,9 @@ export async function POST(
           userId
         ),
 
+      // ====================================
       // FOLLOW UPS
+      // ====================================
 
       supabase
         .from("follow_ups")
@@ -347,7 +384,9 @@ export async function POST(
           userId
         ),
 
+      // ====================================
       // APPOINTMENTS
+      // ====================================
 
       supabase
         .from("appointments")
@@ -357,7 +396,9 @@ export async function POST(
           userId
         ),
 
+      // ====================================
       // SALES
+      // ====================================
 
       supabase
         .from("sales")
@@ -366,7 +407,6 @@ export async function POST(
           "user_id",
           userId
         ),
-
     ]);
 
     // ======================================
@@ -438,7 +478,7 @@ export async function POST(
       salesResult.data || [];
 
     // ======================================
-    // CALCULATE REVENUE
+    // CALCULATE TOTAL REVENUE
     // ======================================
 
     const totalRevenue =
@@ -447,17 +487,19 @@ export async function POST(
           total: number,
           sale: any
         ) => {
-
           return (
             total +
             Number(
               sale.amount || 0
             )
           );
-
         },
         0
       );
+
+    // ======================================
+    // CALCULATE PAID REVENUE
+    // ======================================
 
     const paidRevenue =
       sales
@@ -471,17 +513,19 @@ export async function POST(
             total: number,
             sale: any
           ) => {
-
             return (
               total +
               Number(
                 sale.amount || 0
               )
             );
-
           },
           0
         );
+
+    // ======================================
+    // CALCULATE PENDING REVENUE
+    // ======================================
 
     const pendingRevenue =
       sales
@@ -495,14 +539,12 @@ export async function POST(
             total: number,
             sale: any
           ) => {
-
             return (
               total +
               Number(
                 sale.amount || 0
               )
             );
-
           },
           0
         );
@@ -514,31 +556,36 @@ export async function POST(
     const newLeads =
       leads.filter(
         (lead: any) =>
-          lead.status === "New"
+          lead.status ===
+          "New"
       ).length;
 
     const contactedLeads =
       leads.filter(
         (lead: any) =>
-          lead.status === "Contacted"
+          lead.status ===
+          "Contacted"
       ).length;
 
     const interestedLeads =
       leads.filter(
         (lead: any) =>
-          lead.status === "Interested"
+          lead.status ===
+          "Interested"
       ).length;
 
     const negotiationLeads =
       leads.filter(
         (lead: any) =>
-          lead.status === "Negotiation"
+          lead.status ===
+          "Negotiation"
       ).length;
 
     const convertedLeads =
       leads.filter(
         (lead: any) =>
-          lead.status === "Converted"
+          lead.status ===
+          "Converted"
       ).length;
 
     // ======================================
@@ -566,13 +613,15 @@ export async function POST(
     const completedFollowUps =
       followUps.filter(
         (followUp: any) =>
-          followUp.completed === true
+          followUp.completed ===
+          true
       ).length;
 
     const pendingFollowUps =
       followUps.filter(
         (followUp: any) =>
-          followUp.completed !== true
+          followUp.completed !==
+          true
       ).length;
 
     // ======================================
@@ -583,7 +632,9 @@ export async function POST(
       new Date();
 
     const todayDate =
-      now.toISOString().split("T")[0];
+      now
+        .toISOString()
+        .split("T")[0];
 
     // ======================================
     // OVERDUE TASKS
@@ -592,7 +643,6 @@ export async function POST(
     const overdueTasks =
       tasks.filter(
         (task: any) => {
-
           if (
             task.status ===
             "Completed"
@@ -600,7 +650,9 @@ export async function POST(
             return false;
           }
 
-          if (!task.due_date) {
+          if (
+            !task.due_date
+          ) {
             return false;
           }
 
@@ -608,7 +660,6 @@ export async function POST(
             task.due_date <
             todayDate
           );
-
         }
       ).length;
 
@@ -645,7 +696,6 @@ export async function POST(
     const overdueFollowUps =
       followUps.filter(
         (followUp: any) => {
-
           if (
             followUp.completed ===
             true
@@ -663,7 +713,6 @@ export async function POST(
             followUp.due_date <
             todayDate
           );
-
         }
       ).length;
 
@@ -674,7 +723,6 @@ export async function POST(
     const appointmentsToday =
       appointments.filter(
         (appointment: any) => {
-
           if (
             !appointment.appointment_date
           ) {
@@ -685,7 +733,6 @@ export async function POST(
             appointment.appointment_date ===
             todayDate
           );
-
         }
       ).length;
 
@@ -694,23 +741,17 @@ export async function POST(
     // ======================================
 
     const businessContext = {
-
       subscription: {
-
         plan:
           subscription.plan,
-
       },
 
       customers: {
-
         total:
           customers.length,
-
       },
 
       leads: {
-
         total:
           leads.length,
 
@@ -728,11 +769,9 @@ export async function POST(
 
         converted:
           convertedLeads,
-
       },
 
       tasks: {
-
         total:
           tasks.length,
 
@@ -747,11 +786,9 @@ export async function POST(
 
         dueToday:
           tasksDueToday,
-
       },
 
       followUps: {
-
         total:
           followUps.length,
 
@@ -766,21 +803,17 @@ export async function POST(
 
         dueToday:
           followUpsDueToday,
-
       },
 
       appointments: {
-
         total:
           appointments.length,
 
         today:
           appointmentsToday,
-
       },
 
       sales: {
-
         totalSales:
           sales.length,
 
@@ -792,9 +825,7 @@ export async function POST(
 
         pendingRevenue:
           pendingRevenue,
-
       },
-
     };
 
     // ======================================
@@ -802,7 +833,6 @@ export async function POST(
     // ======================================
 
     let systemPrompt = `
-
 You are BizAI, an intelligent AI Business Assistant.
 
 Your job is to help business owners understand,
@@ -855,15 +885,15 @@ IMPORTANT RULES:
 17. Do not mention that you are receiving a JSON object unless necessary.
 
 You are smart, helpful, professional and practical.
-
 `;
 
     // ======================================
     // DASHBOARD INSIGHT MODE
     // ======================================
 
-    if (mode === "dashboard") {
-
+    if (
+      mode === "dashboard"
+    ) {
       systemPrompt += `
 
 DASHBOARD INSIGHT MODE:
@@ -883,9 +913,7 @@ Analyze the business data and provide:
 Keep the response concise, clear and actionable.
 
 Use headings and bullet points.
-
 `;
-
     }
 
     // ======================================
@@ -900,19 +928,27 @@ Use headings and bullet points.
               (item: any) =>
                 item &&
                 (
-                  item.role === "user" ||
-                  item.role === "assistant"
+                  item.role ===
+                    "user" ||
+                  item.role ===
+                    "assistant"
                 ) &&
                 typeof item.content ===
                   "string" &&
-                item.content.trim().length > 0
+                item.content
+                  .trim()
+                  .length > 0
             )
             .map(
-              (item: ChatMessage) => ({
+              (
+                item: ChatMessage
+              ) => ({
                 role:
                   item.role,
+
                 content:
-                  item.content.trim(),
+                  item.content
+                    .trim(),
               })
             )
             .slice(-10)
@@ -923,9 +959,10 @@ Use headings and bullet points.
     // ======================================
 
     const aiMessages = [
-
       {
-        role: "system" as const,
+        role:
+          "system" as const,
+
         content:
           systemPrompt,
       },
@@ -933,11 +970,12 @@ Use headings and bullet points.
       ...conversationHistory,
 
       {
-        role: "user" as const,
+        role:
+          "user" as const,
+
         content:
           message.trim(),
       },
-
     ];
 
     // ======================================
@@ -946,7 +984,6 @@ Use headings and bullet points.
 
     const completion =
       await openai.chat.completions.create({
-
         model:
           "gpt-4o-mini",
 
@@ -955,7 +992,6 @@ Use headings and bullet points.
 
         temperature:
           0.7,
-
       });
 
     // ======================================
@@ -973,7 +1009,6 @@ Use headings and bullet points.
     // ======================================
 
     if (!aiResponse) {
-
       return NextResponse.json(
         {
           error:
@@ -990,7 +1025,6 @@ Use headings and bullet points.
     // ======================================
 
     return NextResponse.json({
-
       success:
         true,
 
@@ -999,11 +1033,9 @@ Use headings and bullet points.
 
       businessData:
         businessContext,
-
     });
 
   } catch (error: any) {
-
     console.error(
       "AI API Error:",
       error
@@ -1016,7 +1048,6 @@ Use headings and bullet points.
     if (
       error?.status === 429
     ) {
-
       return NextResponse.json(
         {
           error:
@@ -1035,7 +1066,6 @@ Use headings and bullet points.
     if (
       error?.status === 401
     ) {
-
       return NextResponse.json(
         {
           error:
