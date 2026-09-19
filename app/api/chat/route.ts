@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // ========================================
 // HELPERS
@@ -142,7 +143,41 @@ export async function POST(
     }
 
     // ====================================
-    // 5. CHECK OPENAI CONFIGURATION
+    // 5. RATE LIMIT
+    // 20 REQUESTS / 60 SECONDS
+    // ====================================
+
+    const rateLimit =
+      await checkRateLimit(
+        user.id,
+        "/api/chat",
+        20,
+        60
+      );
+
+    if (!rateLimit.allowed) {
+      console.warn(
+        "AI chat rate limit triggered for user:",
+        user.id
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            rateLimit.error ||
+            "Too many AI requests. Please wait a moment and try again.",
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": "60",
+          },
+        }
+      );
+    }
+
+    // ====================================
+    // 6. CHECK OPENAI CONFIGURATION
     // ====================================
 
     const openAIKey =
@@ -171,7 +206,7 @@ export async function POST(
       });
 
     // ====================================
-    // 6. READ REQUEST BODY
+    // 7. READ REQUEST BODY
     // ====================================
 
     let body: unknown;
@@ -214,7 +249,7 @@ export async function POST(
       };
 
     // ====================================
-    // 7. AI FOLLOW-UP MESSAGE
+    // 8. AI FOLLOW-UP MESSAGE
     // ====================================
 
     if (
@@ -304,7 +339,10 @@ export async function POST(
 Generate a professional and friendly follow-up message for this business lead.
 
 Lead Name: ${leadName}
-Lead Status: ${leadStatus || "Not provided"}
+
+Lead Status:
+${leadStatus || "Not provided"}
+
 Follow-up Priority:
 ${followUpPriority}
 
@@ -332,7 +370,8 @@ helping Indian businesses communicate
 professionally with leads.
 `,
 
-          input: prompt,
+          input:
+            prompt,
         });
 
       const reply =
@@ -356,7 +395,7 @@ professionally with leads.
     }
 
     // ====================================
-    // 8. NORMAL AI CHAT
+    // 9. NORMAL AI CHAT
     // ====================================
 
     const message =
@@ -400,7 +439,7 @@ professionally with leads.
     }
 
     // ====================================
-    // 9. BUSINESS DATA
+    // 10. BUSINESS DATA
     // ====================================
 
     let businessData:
@@ -434,7 +473,7 @@ professionally with leads.
     }
 
     // ====================================
-    // 10. GET BUSINESS DATA
+    // 11. GET BUSINESS DATA
     // ====================================
 
     const customers =
@@ -605,7 +644,6 @@ ${JSON.stringify(
   2
 )}
 
-
 =========================
 
 LEAD DETAILS
@@ -663,7 +701,7 @@ ${JSON.stringify(
 `;
 
     // ====================================
-    // 11. OPENAI RESPONSE
+    // 12. OPENAI RESPONSE
     // ====================================
 
     const response =
@@ -747,7 +785,7 @@ secrets, or internal server details.
       });
 
     // ====================================
-    // 12. CHECK RESPONSE
+    // 13. CHECK RESPONSE
     // ====================================
 
     const reply =
@@ -766,12 +804,13 @@ secrets, or internal server details.
     }
 
     // ====================================
-    // 13. SUCCESS
+    // 14. SUCCESS
     // ====================================
 
     return NextResponse.json({
       reply,
     });
+
   } catch (error: any) {
     console.error(
       "OpenAI API error:",
