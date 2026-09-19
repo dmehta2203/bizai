@@ -201,6 +201,39 @@ function AIInsightsContent() {
       setLoading(true);
       setError(null);
 
+      // =====================================
+      // GET CURRENT SUPABASE SESSION
+      // =====================================
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.user) {
+        router.push("/login");
+        return;
+      }
+
+      // =====================================
+      // CHECK ACCESS TOKEN
+      // =====================================
+
+      if (!session.access_token) {
+        setError(
+          "Your authentication session is missing. Please log in again."
+        );
+
+        await supabase.auth.signOut();
+
+        router.push("/login");
+
+        return;
+      }
+
+      // =====================================
+      // SECURE AI INSIGHTS REQUEST
+      // =====================================
+
       const response =
         await fetch(
           "/api/ai-insights",
@@ -210,11 +243,12 @@ function AIInsightsContent() {
             headers: {
               "Content-Type":
                 "application/json",
+
+              Authorization:
+                `Bearer ${session.access_token}`,
             },
 
-            body: JSON.stringify({
-              userId,
-            }),
+            body: JSON.stringify({}),
           }
         );
 

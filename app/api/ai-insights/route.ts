@@ -11,7 +11,7 @@ const openai = new OpenAI({
 });
 
 // =====================================
-// SUPABASE CLIENT
+// SUPABASE CONFIG
 // =====================================
 
 const supabaseUrl =
@@ -19,6 +19,10 @@ const supabaseUrl =
 
 const supabaseServiceKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+// =====================================
+// SUPABASE ADMIN CLIENT
+// =====================================
 
 const supabase = createClient(
   supabaseUrl,
@@ -35,24 +39,90 @@ export async function POST(
   try {
 
     // =====================================
-    // GET REQUEST DATA
+    // GET AUTHORIZATION HEADER
     // =====================================
 
-    const body =
-      await request.json();
+    const authorization =
+      request.headers.get("authorization");
 
-    const { userId } = body;
-
-    if (!userId) {
+    if (
+      !authorization ||
+      !authorization.startsWith("Bearer ")
+    ) {
       return NextResponse.json(
         {
-          error: "User ID is required.",
+          error:
+            "Authentication required.",
         },
         {
-          status: 400,
+          status: 401,
         }
       );
     }
+
+    // =====================================
+    // GET ACCESS TOKEN
+    // =====================================
+
+    const accessToken =
+      authorization.replace(
+        "Bearer ",
+        ""
+      ).trim();
+
+    if (!accessToken) {
+      return NextResponse.json(
+        {
+          error:
+            "Authentication token is missing.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    // =====================================
+    // VERIFY USER WITH SUPABASE
+    // =====================================
+
+    const {
+      data: {
+        user: authenticatedUser,
+      },
+      error: authError,
+    } =
+      await supabase.auth.getUser(
+        accessToken
+      );
+
+    if (
+      authError ||
+      !authenticatedUser
+    ) {
+
+      console.error(
+        "Authentication error:",
+        authError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Invalid or expired authentication session.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    // =====================================
+    // TRUST ONLY VERIFIED USER ID
+    // =====================================
+
+    const userId =
+      authenticatedUser.id;
 
     // =====================================
     // CHECK SUBSCRIPTION
@@ -139,7 +209,7 @@ export async function POST(
               "Your subscription has expired.",
           },
           {
-            status: 403,
+            status: 403
           }
         );
       }
@@ -166,7 +236,7 @@ export async function POST(
             "AI Insights requires Professional or Business plan.",
         },
         {
-          status: 403,
+          status: 403
         }
       );
     }
@@ -540,7 +610,7 @@ IMPORTANT:
             "AI could not generate insights.",
         },
         {
-          status: 500,
+          status: 500
         }
       );
     }
@@ -566,10 +636,50 @@ IMPORTANT:
       error
     );
 
+    // =====================================
+    // OPENAI RATE LIMIT / QUOTA
+    // =====================================
+
+    if (
+      error?.status === 429
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "AI service is temporarily unavailable because the API quota or credits have been exhausted. Please add OpenAI API credits and try again.",
+        },
+        {
+          status: 429,
+        }
+      );
+    }
+
+    // =====================================
+    // OPENAI AUTH ERROR
+    // =====================================
+
+    if (
+      error?.status === 401
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "OpenAI API key is invalid or missing.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    // =====================================
+    // GENERAL ERROR
+    // =====================================
+
     return NextResponse.json(
       {
         error:
-          error.message ||
+          error?.message ||
           "Failed to generate AI insights.",
       },
       {
