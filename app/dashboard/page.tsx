@@ -193,21 +193,24 @@ export default function DashboardPage() {
       // ======================
 
       try {
-        await fetch(
-          "/api/notifications/check",
-          {
-            method: "POST",
+        if (session.access_token) {
+          await fetch(
+            "/api/notifications/check",
+            {
+              method: "POST",
 
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
+              headers: {
+                "Content-Type":
+                  "application/json",
 
-            body: JSON.stringify({
-              userId,
-            }),
-          }
-        );
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+
+              body: JSON.stringify({}),
+            }
+          );
+        }
       } catch (error) {
         console.error(
           "Notification error:",
@@ -770,6 +773,19 @@ export default function DashboardPage() {
       // ======================
       // SECURE AI REQUEST
       // ======================
+
+      if (!session.access_token) {
+
+        setAiInsight(
+          "Your authentication session is missing. Please log in again."
+        );
+
+        await supabase.auth.signOut();
+
+        router.push("/login");
+
+        return;
+      }
 
       const response =
         await fetch(

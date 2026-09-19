@@ -14,42 +14,128 @@ const supabase = createClient(
 // POST API
 // ======================================
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest
+) {
   try {
+
     // ======================================
-    // GET USER ID
+    // GET AUTHORIZATION HEADER
     // ======================================
 
-    const body = await request.json();
+    const authorization =
+      request.headers.get(
+        "authorization"
+      );
 
-    const { userId } = body;
-
-    if (!userId) {
+    if (
+      !authorization ||
+      !authorization.startsWith(
+        "Bearer "
+      )
+    ) {
       return NextResponse.json(
         {
-          error: "User ID is required.",
+          error:
+            "Authentication required.",
         },
         {
-          status: 400,
+          status: 401,
         }
       );
     }
 
     // ======================================
+    // GET ACCESS TOKEN
+    // ======================================
+
+    const accessToken =
+      authorization
+        .replace(
+          "Bearer ",
+          ""
+        )
+        .trim();
+
+    if (!accessToken) {
+      return NextResponse.json(
+        {
+          error:
+            "Authentication token is missing.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    // ======================================
+    // VERIFY USER WITH SUPABASE
+    // ======================================
+
+    const {
+      data: {
+        user: authenticatedUser,
+      },
+      error: authError,
+    } =
+      await supabase.auth.getUser(
+        accessToken
+      );
+
+    if (
+      authError ||
+      !authenticatedUser
+    ) {
+
+      console.error(
+        "Authentication error:",
+        authError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Invalid or expired authentication session.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    // ======================================
+    // TRUST ONLY VERIFIED USER ID
+    // ======================================
+
+    const userId =
+      authenticatedUser.id;
+
+    // ======================================
     // GET TODAY DATE
     // ======================================
 
-    const today = new Date();
+    const today =
+      new Date();
 
-    const year = today.getFullYear();
+    const year =
+      today.getFullYear();
 
-    const month = String(
-      today.getMonth() + 1
-    ).padStart(2, "0");
+    const month =
+      String(
+        today.getMonth() + 1
+      ).padStart(
+        2,
+        "0"
+      );
 
-    const day = String(
-      today.getDate()
-    ).padStart(2, "0");
+    const day =
+      String(
+        today.getDate()
+      ).padStart(
+        2,
+        "0"
+      );
 
     const todayString =
       `${year}-${month}-${day}`;
@@ -71,37 +157,81 @@ export async function POST(request: NextRequest) {
       supabase
         .from("tasks")
         .select("*")
-        .eq("user_id", userId),
+        .eq(
+          "user_id",
+          userId
+        ),
 
       // FOLLOW UPS
 
       supabase
         .from("follow_ups")
         .select("*")
-        .eq("user_id", userId),
+        .eq(
+          "user_id",
+          userId
+        ),
 
       // SALES
 
       supabase
         .from("sales")
         .select("*")
-        .eq("user_id", userId),
+        .eq(
+          "user_id",
+          userId
+        ),
 
       // APPOINTMENTS
 
       supabase
         .from("appointments")
         .select("*")
-        .eq("user_id", userId),
+        .eq(
+          "user_id",
+          userId
+        ),
 
       // LEADS
 
       supabase
         .from("leads")
         .select("*")
-        .eq("user_id", userId),
+        .eq(
+          "user_id",
+          userId
+        ),
 
     ]);
+
+    // ======================================
+    // CHECK DATABASE READ ERRORS
+    // ======================================
+
+    const databaseReadError =
+      tasksResult.error ||
+      followUpsResult.error ||
+      salesResult.error ||
+      appointmentsResult.error ||
+      leadsResult.error;
+
+    if (databaseReadError) {
+
+      console.error(
+        "Notification data error:",
+        databaseReadError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to load notification data.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
 
     // ======================================
     // GET DATA
@@ -131,19 +261,45 @@ export async function POST(request: NextRequest) {
       message: string,
       type: string
     ) {
+
       // ======================================
       // CHECK DUPLICATE
       // ======================================
 
-      const { data: existing } =
+      const {
+        data: existing,
+        error: duplicateError,
+      } =
         await supabase
           .from("notifications")
           .select("id")
-          .eq("user_id", userId)
-          .eq("title", title)
-          .eq("message", message)
-          .eq("is_read", false)
+          .eq(
+            "user_id",
+            userId
+          )
+          .eq(
+            "title",
+            title
+          )
+          .eq(
+            "message",
+            message
+          )
+          .eq(
+            "is_read",
+            false
+          )
           .maybeSingle();
+
+      if (duplicateError) {
+
+        console.error(
+          "Notification duplicate check error:",
+          duplicateError
+        );
+
+        return;
+      }
 
       // ======================================
       // DON'T CREATE DUPLICATE
@@ -157,15 +313,35 @@ export async function POST(request: NextRequest) {
       // CREATE NOTIFICATION
       // ======================================
 
-      await supabase
-        .from("notifications")
-        .insert({
-          user_id: userId,
-          title: title,
-          message: message,
-          type: type,
-          is_read: false,
-        });
+      const {
+        error: insertError,
+      } =
+        await supabase
+          .from("notifications")
+          .insert({
+            user_id:
+              userId,
+
+            title:
+              title,
+
+            message:
+              message,
+
+            type:
+              type,
+
+            is_read:
+              false,
+          });
+
+      if (insertError) {
+
+        console.error(
+          "Notification insert error:",
+          insertError
+        );
+      }
     }
 
     // ======================================
@@ -173,22 +349,28 @@ export async function POST(request: NextRequest) {
     // ======================================
 
     const overdueTasks =
-      tasks.filter((task: any) => {
+      tasks.filter(
+        (task: any) => {
 
-        if (
-          task.status === "Completed" ||
-          !task.due_date
-        ) {
-          return false;
+          if (
+            task.status ===
+              "Completed" ||
+            !task.due_date
+          ) {
+            return false;
+          }
+
+          return (
+            task.due_date <
+            todayString
+          );
         }
+      );
 
-        return (
-          task.due_date <
-          todayString
-        );
-      });
-
-    if (overdueTasks.length > 0) {
+    if (
+      overdueTasks.length >
+      0
+    ) {
 
       await createNotification(
         "Overdue Tasks",
@@ -204,11 +386,16 @@ export async function POST(request: NextRequest) {
     const tasksToday =
       tasks.filter(
         (task: any) =>
-          task.status !== "Completed" &&
-          task.due_date === todayString
+          task.status !==
+            "Completed" &&
+          task.due_date ===
+            todayString
       );
 
-    if (tasksToday.length > 0) {
+    if (
+      tasksToday.length >
+      0
+    ) {
 
       await createNotification(
         "Tasks Due Today",
@@ -229,7 +416,10 @@ export async function POST(request: NextRequest) {
             todayString
       );
 
-    if (overdueFollowUps.length > 0) {
+    if (
+      overdueFollowUps.length >
+      0
+    ) {
 
       await createNotification(
         "Overdue Follow-ups",
@@ -250,7 +440,10 @@ export async function POST(request: NextRequest) {
             todayString
       );
 
-    if (followUpsToday.length > 0) {
+    if (
+      followUpsToday.length >
+      0
+    ) {
 
       await createNotification(
         "Follow-ups Due Today",
@@ -283,7 +476,10 @@ export async function POST(request: NextRequest) {
         0
       );
 
-    if (pendingAmount > 0) {
+    if (
+      pendingAmount >
+      0
+    ) {
 
       await createNotification(
         "Pending Payments",
@@ -304,7 +500,8 @@ export async function POST(request: NextRequest) {
       );
 
     if (
-      appointmentsToday.length > 0
+      appointmentsToday.length >
+      0
     ) {
 
       await createNotification(
@@ -328,7 +525,8 @@ export async function POST(request: NextRequest) {
       );
 
     if (
-      priorityLeads.length > 0
+      priorityLeads.length >
+      0
     ) {
 
       await createNotification(
@@ -343,12 +541,15 @@ export async function POST(request: NextRequest) {
     // ======================================
 
     return NextResponse.json({
-      success: true,
+
+      success:
+        true,
 
       message:
         "Notifications checked successfully.",
 
       summary: {
+
         overdueTasks:
           overdueTasks.length,
 
@@ -372,7 +573,9 @@ export async function POST(request: NextRequest) {
 
         priorityLeads:
           priorityLeads.length,
+
       },
+
     });
 
   } catch (error: any) {
@@ -385,7 +588,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          error.message ||
+          error?.message ||
           "Something went wrong.",
       },
       {
