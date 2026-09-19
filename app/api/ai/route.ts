@@ -11,7 +11,7 @@ const openai = new OpenAI({
 });
 
 // ======================================
-// SUPABASE CLIENT
+// SUPABASE CONFIG
 // ======================================
 
 const supabaseUrl =
@@ -19,6 +19,10 @@ const supabaseUrl =
 
 const supabaseServiceKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+// ======================================
+// SUPABASE ADMIN CLIENT
+// ======================================
 
 const supabase = createClient(
   supabaseUrl,
@@ -44,6 +48,91 @@ export async function POST(
   try {
 
     // ======================================
+    // GET AUTHORIZATION HEADER
+    // ======================================
+
+    const authorization =
+      request.headers.get("authorization");
+
+    if (
+      !authorization ||
+      !authorization.startsWith("Bearer ")
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Authentication required.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    // ======================================
+    // GET ACCESS TOKEN
+    // ======================================
+
+    const accessToken =
+      authorization.replace(
+        "Bearer ",
+        ""
+      ).trim();
+
+    if (!accessToken) {
+      return NextResponse.json(
+        {
+          error:
+            "Authentication token is missing.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    // ======================================
+    // VERIFY USER WITH SUPABASE
+    // ======================================
+
+    const {
+      data: {
+        user: authenticatedUser,
+      },
+      error: authError,
+    } = await supabase.auth.getUser(
+      accessToken
+    );
+
+    if (
+      authError ||
+      !authenticatedUser
+    ) {
+
+      console.error(
+        "Authentication error:",
+        authError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Invalid or expired authentication session.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    // ======================================
+    // TRUST ONLY VERIFIED USER ID
+    // ======================================
+
+    const userId =
+      authenticatedUser.id;
+
+    // ======================================
     // GET REQUEST DATA
     // ======================================
 
@@ -52,7 +141,6 @@ export async function POST(
 
     const {
       message,
-      userId,
       messages = [],
       mode = "chat",
     } = body;
@@ -69,25 +157,6 @@ export async function POST(
         {
           error:
             "Message is required.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    // ======================================
-    // VALIDATE USER ID
-    // ======================================
-
-    if (
-      !userId ||
-      typeof userId !== "string"
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "User ID is required.",
         },
         {
           status: 400,

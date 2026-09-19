@@ -767,6 +767,10 @@ export default function DashboardPage() {
         return;
       }
 
+      // ======================
+      // SECURE AI REQUEST
+      // ======================
+
       const response =
         await fetch(
           "/api/ai",
@@ -777,6 +781,9 @@ export default function DashboardPage() {
             headers: {
               "Content-Type":
                 "application/json",
+
+              Authorization:
+                `Bearer ${session.access_token}`,
             },
 
             body:
@@ -785,10 +792,10 @@ export default function DashboardPage() {
                 message:
                   "Generate smart daily business insights. Analyze my business performance, identify urgent priorities and give me actionable recommendations for today.",
 
-                userId:
-                  session.user.id,
-
                 messages: [],
+
+                mode:
+                  "dashboard",
 
               }),
 
