@@ -26,11 +26,9 @@ export type SubscriptionData = {
   amount: number | null;
 
   razorpay_customer_id: string | null;
-
   razorpay_subscription_id: string | null;
 
   current_period_start: string | null;
-
   current_period_end: string | null;
 };
 
@@ -126,45 +124,18 @@ export async function getUserSubscription(
 
       if (expiryDate <= today) {
         console.log(
-          "Subscription expired. Updating status..."
+          "Subscription expired."
         );
 
-        // ======================
-        // UPDATE STATUS
-        // ======================
-
-        const {
-          error: expiryUpdateError,
-        } = await supabase
-          .from("subscriptions")
-          .update({
-            status: "expired",
-            updated_at:
-              new Date().toISOString(),
-          })
-          .eq(
-            "id",
-            data.id
-          );
-
-        // ======================
-        // UPDATE ERROR
-        // ======================
-
-        if (expiryUpdateError) {
-          console.error(
-            "Failed to update expired subscription:",
-            expiryUpdateError.message
-          );
-        } else {
-          console.log(
-            "Subscription status updated to expired"
-          );
-        }
-
-        // ======================
-        // RETURN NO ACCESS
-        // ======================
+        // Do NOT update the database
+        // from the browser client.
+        //
+        // Database subscription state is
+        // controlled by the secure payment/
+        // webhook backend.
+        //
+        // For access checks, an expired
+        // subscription simply has no access.
 
         return null;
       }
