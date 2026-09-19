@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // =====================================
 // OPENAI CLIENT
@@ -37,7 +38,6 @@ export async function POST(
   request: NextRequest
 ) {
   try {
-
     // =====================================
     // GET AUTHORIZATION HEADER
     // =====================================
@@ -65,10 +65,12 @@ export async function POST(
     // =====================================
 
     const accessToken =
-      authorization.replace(
-        "Bearer ",
-        ""
-      ).trim();
+      authorization
+        .replace(
+          "Bearer ",
+          ""
+        )
+        .trim();
 
     if (!accessToken) {
       return NextResponse.json(
@@ -100,7 +102,6 @@ export async function POST(
       authError ||
       !authenticatedUser
     ) {
-
       console.error(
         "Authentication error:",
         authError
@@ -155,7 +156,6 @@ export async function POST(
         .maybeSingle();
 
     if (subscriptionError) {
-
       console.error(
         "Subscription Error:",
         subscriptionError
@@ -173,7 +173,6 @@ export async function POST(
     }
 
     if (!subscription) {
-
       return NextResponse.json(
         {
           error:
@@ -192,7 +191,6 @@ export async function POST(
     if (
       subscription.current_period_end
     ) {
-
       const expiryDate =
         new Date(
           subscription.current_period_end
@@ -202,14 +200,13 @@ export async function POST(
         new Date();
 
       if (expiryDate < today) {
-
         return NextResponse.json(
           {
             error:
               "Your subscription has expired.",
           },
           {
-            status: 403
+            status: 403,
           }
         );
       }
@@ -229,14 +226,47 @@ export async function POST(
         subscription.plan
       )
     ) {
-
       return NextResponse.json(
         {
           error:
             "AI Insights requires Professional or Business plan.",
         },
         {
-          status: 403
+          status: 403,
+        }
+      );
+    }
+
+    // =====================================
+    // API RATE LIMIT
+    // 20 REQUESTS / 60 SECONDS
+    // =====================================
+
+    const rateLimit =
+      await checkRateLimit(
+        userId,
+        "/api/ai-insights",
+        20,
+        60
+      );
+
+    if (!rateLimit.allowed) {
+      console.warn(
+        "AI Insights rate limit triggered for user:",
+        userId
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            rateLimit.error ||
+            "Too many AI requests. Please wait a moment and try again.",
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": "60",
+          },
         }
       );
     }
@@ -254,7 +284,6 @@ export async function POST(
       salesResult,
     ] =
       await Promise.all([
-
         supabase
           .from("customers")
           .select("*")
@@ -302,7 +331,6 @@ export async function POST(
             "user_id",
             userId
           ),
-
       ]);
 
     // =====================================
@@ -423,13 +451,15 @@ export async function POST(
     const completedFollowUps =
       followUps.filter(
         (followUp: any) =>
-          followUp.completed === true
+          followUp.completed ===
+          true
       ).length;
 
     const pendingFollowUps =
       followUps.filter(
         (followUp: any) =>
-          followUp.completed !== true
+          followUp.completed !==
+          true
       ).length;
 
     // =====================================
@@ -437,7 +467,6 @@ export async function POST(
     // =====================================
 
     const businessData = {
-
       plan:
         subscription.plan,
 
@@ -445,7 +474,6 @@ export async function POST(
         customers.length,
 
       leads: {
-
         total:
           leads.length,
 
@@ -457,11 +485,9 @@ export async function POST(
 
         converted:
           convertedLeads,
-
       },
 
       tasks: {
-
         total:
           tasks.length,
 
@@ -470,11 +496,9 @@ export async function POST(
 
         pending:
           pendingTasks,
-
       },
 
       followUps: {
-
         total:
           followUps.length,
 
@@ -483,14 +507,12 @@ export async function POST(
 
         pending:
           pendingFollowUps,
-
       },
 
       appointments:
         appointments.length,
 
       sales: {
-
         total:
           sales.length,
 
@@ -499,9 +521,7 @@ export async function POST(
         paidRevenue,
 
         pendingRevenue,
-
       },
-
     };
 
     // =====================================
@@ -567,12 +587,10 @@ IMPORTANT:
 
     const completion =
       await openai.chat.completions.create({
-
         model:
           "gpt-4o-mini",
 
         messages: [
-
           {
             role: "system",
             content:
@@ -584,12 +602,10 @@ IMPORTANT:
             content:
               "Analyze my business and generate AI insights.",
           },
-
         ],
 
         temperature:
           0.6,
-
       });
 
     // =====================================
@@ -603,14 +619,13 @@ IMPORTANT:
         ?.content;
 
     if (!insights) {
-
       return NextResponse.json(
         {
           error:
             "AI could not generate insights.",
         },
         {
-          status: 500
+          status: 500,
         }
       );
     }
@@ -620,17 +635,14 @@ IMPORTANT:
     // =====================================
 
     return NextResponse.json({
-
       success: true,
 
       insights,
 
       businessData,
-
     });
 
   } catch (error: any) {
-
     console.error(
       "AI Insights Error:",
       error
