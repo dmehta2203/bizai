@@ -33,65 +33,116 @@ export default function ReceiptsPage() {
   const [downloadingId, setDownloadingId] =
     useState<string | null>(null);
 
-  useEffect(() => {
-    loadReceipts();
-  }, []);
-
   // ==============================
   // LOAD RECEIPTS
   // ==============================
+
+  useEffect(() => {
+    loadReceipts();
+  }, []);
 
   async function loadReceipts() {
     try {
       setLoading(true);
 
+      // ==========================
+      // GET SESSION
+      // ==========================
+
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } =
+        await supabase.auth.getSession();
 
       if (!session?.user) {
         router.push("/login");
         return;
       }
 
-      const { data, error } =
-        await supabase
-          .from("payment_receipts")
-          .select("*")
-          .eq(
-            "user_id",
-            session.user.id
-          )
-          .order(
-            "payment_date",
-            {
-              ascending: false,
-            }
-          );
-
-      if (error) {
-        console.error(
-          "Receipt loading error:",
-          error
-        );
-
-        alert(
-          "Unable to load receipts: " +
-          error.message
-        );
-
+      if (!session.access_token) {
+        await supabase.auth.signOut();
+        router.push("/login");
         return;
       }
 
+      // ==========================
+      // GET RECEIPTS FROM API
+      // ==========================
+
+      const response =
+        await fetch(
+          "/api/receipt",
+          {
+            method: "GET",
+
+            headers: {
+              Authorization:
+                `Bearer ${session.access_token}`,
+            },
+
+            cache: "no-store",
+          }
+        );
+
+      let result: {
+        success?: boolean;
+        receipts?: Receipt[];
+        error?: string;
+      };
+
+      try {
+        result =
+          await response.json();
+      } catch {
+        result = {
+          error:
+            "Invalid server response.",
+        };
+      }
+
+      // ==========================
+      // HANDLE API ERROR
+      // ==========================
+
+      if (
+        !response.ok
+      ) {
+        if (
+          response.status ===
+          401
+        ) {
+          await supabase.auth.signOut();
+          router.push("/login");
+          return;
+        }
+
+        throw new Error(
+          result.error ||
+            "Unable to load receipts."
+        );
+      }
+
+      // ==========================
+      // STORE RECEIPTS
+      // ==========================
+
       setReceipts(
-        data || []
+        result.receipts ||
+          []
       );
 
     } catch (error) {
       console.error(
-        "Receipt error:",
+        "Receipt loading error:",
         error
       );
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to load receipts."
+      );
+
     } finally {
       setLoading(false);
     }
@@ -162,6 +213,7 @@ export default function ReceiptsPage() {
       // ==============================
 
       pdf.setFontSize(24);
+
       pdf.setFont(
         "helvetica",
         "bold"
@@ -380,7 +432,6 @@ export default function ReceiptsPage() {
       );
 
     } catch (error) {
-
       console.error(
         "PDF download error:",
         error
@@ -391,11 +442,14 @@ export default function ReceiptsPage() {
       );
 
     } finally {
-
-      setTimeout(() => {
-        setDownloadingId(null);
-      }, 500);
-
+      setTimeout(
+        () => {
+          setDownloadingId(
+            null
+          );
+        },
+        500
+      );
     }
   }
 
@@ -406,6 +460,7 @@ export default function ReceiptsPage() {
   if (loading) {
     return (
       <main className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
+
         <div className="text-center">
 
           <div className="text-5xl mb-4">
@@ -417,6 +472,7 @@ export default function ReceiptsPage() {
           </p>
 
         </div>
+
       </main>
     );
   }
@@ -449,7 +505,9 @@ export default function ReceiptsPage() {
           <div className="flex gap-3">
 
             <button
-              onClick={loadReceipts}
+              onClick={
+                loadReceipts
+              }
               className="bg-slate-800 hover:bg-slate-700 border border-slate-700 px-5 py-3 rounded-xl"
             >
               🔄 Refresh
@@ -457,7 +515,9 @@ export default function ReceiptsPage() {
 
             <button
               onClick={() =>
-                router.push("/dashboard")
+                router.push(
+                  "/dashboard"
+                )
               }
               className="bg-blue-600 hover:bg-blue-700 px-5 py-3 rounded-xl font-semibold"
             >
@@ -470,7 +530,8 @@ export default function ReceiptsPage() {
 
         {/* RECEIPTS */}
 
-        {receipts.length === 0 ? (
+        {receipts.length ===
+        0 ? (
 
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center">
 
@@ -493,10 +554,14 @@ export default function ReceiptsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
             {receipts.map(
-              (receipt) => (
+              (
+                receipt
+              ) => (
 
                 <div
-                  key={receipt.id}
+                  key={
+                    receipt.id
+                  }
                   className="bg-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl p-6 transition"
                 >
 
@@ -511,7 +576,9 @@ export default function ReceiptsPage() {
                       </p>
 
                       <h2 className="font-bold text-lg mt-1">
-                        {receipt.receipt_number}
+                        {
+                          receipt.receipt_number
+                        }
                       </h2>
 
                     </div>
@@ -531,7 +598,10 @@ export default function ReceiptsPage() {
                     </p>
 
                     <p className="text-xl font-bold mt-1 text-purple-400">
-                      👑 {receipt.plan}
+                      👑{" "}
+                      {
+                        receipt.plan
+                      }
                     </p>
 
                   </div>
