@@ -1,14 +1,21 @@
 import { NextResponse } from "next/server";
 import Razorpay from "razorpay";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // ==============================
 // TYPES
 // ==============================
 
-type PlanName = "Starter" | "Professional" | "Business";
+type PlanName =
+  | "Starter"
+  | "Professional"
+  | "Business";
 
-type BillingCycle = "weekly" | "monthly" | "quarterly";
+type BillingCycle =
+  | "weekly"
+  | "monthly"
+  | "quarterly";
 
 // ==============================
 // PLAN PRICES
@@ -57,22 +64,29 @@ const VALID_BILLING_CYCLES: BillingCycle[] = [
 // POST
 // ==============================
 
-export async function POST(request: Request) {
+export async function POST(
+  request: Request
+) {
   try {
     // ==================================================
     // 1. CHECK AUTHORIZATION HEADER
     // ==================================================
 
     const authorization =
-      request.headers.get("authorization");
+      request.headers.get(
+        "authorization"
+      );
 
     if (
       !authorization ||
-      !authorization.startsWith("Bearer ")
+      !authorization.startsWith(
+        "Bearer "
+      )
     ) {
       return NextResponse.json(
         {
-          error: "Authentication required",
+          error:
+            "Authentication required",
         },
         {
           status: 401,
@@ -81,12 +95,17 @@ export async function POST(request: Request) {
     }
 
     const accessToken =
-      authorization.slice("Bearer ".length).trim();
+      authorization
+        .slice(
+          "Bearer ".length
+        )
+        .trim();
 
     if (!accessToken) {
       return NextResponse.json(
         {
-          error: "Authentication required",
+          error:
+            "Authentication required",
         },
         {
           status: 401,
@@ -99,10 +118,12 @@ export async function POST(request: Request) {
     // ==================================================
 
     const supabaseUrl =
-      process.env.NEXT_PUBLIC_SUPABASE_URL;
+      process.env
+        .NEXT_PUBLIC_SUPABASE_URL;
 
     const supabasePublishableKey =
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      process.env
+        .NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
     if (
       !supabaseUrl ||
@@ -127,17 +148,23 @@ export async function POST(request: Request) {
     // 3. CREATE SERVER-SIDE SUPABASE AUTH CLIENT
     // ==================================================
 
-    const supabase = createClient(
-      supabaseUrl,
-      supabasePublishableKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-          detectSessionInUrl: false,
-        },
-      }
-    );
+    const supabase =
+      createClient(
+        supabaseUrl,
+        supabasePublishableKey,
+        {
+          auth: {
+            autoRefreshToken:
+              false,
+
+            persistSession:
+              false,
+
+            detectSessionInUrl:
+              false,
+          },
+        }
+      );
 
     // ==================================================
     // 4. VERIFY ACCESS TOKEN
@@ -146,9 +173,15 @@ export async function POST(request: Request) {
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser(accessToken);
+    } =
+      await supabase.auth.getUser(
+        accessToken
+      );
 
-    if (userError || !user) {
+    if (
+      userError ||
+      !user
+    ) {
       console.error(
         "Payment authentication error:",
         userError?.message
@@ -166,17 +199,62 @@ export async function POST(request: Request) {
     }
 
     // ==================================================
-    // 5. READ REQUEST BODY
+    // 5. RATE LIMIT PAYMENT ORDER CREATION
+    // ==================================================
+    //
+    // Maximum:
+    // 5 order-creation requests
+    // per user per 60 seconds.
+    //
+    // This runs BEFORE creating a Razorpay order.
+
+    const rateLimit =
+      await checkRateLimit(
+        user.id,
+        "/api/payment/create-order",
+        5,
+        60
+      );
+
+    if (
+      !rateLimit.allowed
+    ) {
+      console.warn(
+        "Payment order rate limit triggered for user:",
+        user.id
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            rateLimit.error ||
+            "Too many payment attempts. Please wait a moment and try again.",
+        },
+        {
+          status: 429,
+
+          headers: {
+            "Retry-After":
+              "60",
+          },
+        }
+      );
+    }
+
+    // ==================================================
+    // 6. READ REQUEST BODY
     // ==================================================
 
     let body: unknown;
 
     try {
-      body = await request.json();
+      body =
+        await request.json();
     } catch {
       return NextResponse.json(
         {
-          error: "Invalid request body",
+          error:
+            "Invalid request body",
         },
         {
           status: 400,
@@ -190,7 +268,8 @@ export async function POST(request: Request) {
     ) {
       return NextResponse.json(
         {
-          error: "Invalid request body",
+          error:
+            "Invalid request body",
         },
         {
           status: 400,
@@ -211,11 +290,12 @@ export async function POST(request: Request) {
       requestData.billingCycle;
 
     // ==================================================
-    // 6. CHECK PLAN
+    // 7. CHECK PLAN
     // ==================================================
 
     if (
-      typeof plan !== "string" ||
+      typeof plan !==
+        "string" ||
       !VALID_PLANS.includes(
         plan as PlanName
       )
@@ -232,11 +312,12 @@ export async function POST(request: Request) {
     }
 
     // ==================================================
-    // 7. CHECK BILLING CYCLE
+    // 8. CHECK BILLING CYCLE
     // ==================================================
 
     if (
-      typeof billingCycle !== "string" ||
+      typeof billingCycle !==
+        "string" ||
       !VALID_BILLING_CYCLES.includes(
         billingCycle as BillingCycle
       )
@@ -259,7 +340,7 @@ export async function POST(request: Request) {
       billingCycle as BillingCycle;
 
     // ==================================================
-    // 8. GET SERVER-SIDE PRICE
+    // 9. GET SERVER-SIDE PRICE
     // ==================================================
 
     const price =
@@ -270,8 +351,11 @@ export async function POST(request: Request) {
       ];
 
     if (
-      typeof price !== "number" ||
-      !Number.isInteger(price) ||
+      typeof price !==
+        "number" ||
+      !Number.isInteger(
+        price
+      ) ||
       price <= 0
     ) {
       console.error(
@@ -291,14 +375,16 @@ export async function POST(request: Request) {
     }
 
     // ==================================================
-    // 9. CHECK RAZORPAY ENVIRONMENT VARIABLES
+    // 10. CHECK RAZORPAY ENVIRONMENT VARIABLES
     // ==================================================
 
     const razorpayKeyId =
-      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+      process.env
+        .NEXT_PUBLIC_RAZORPAY_KEY_ID;
 
     const razorpayKeySecret =
-      process.env.RAZORPAY_KEY_SECRET;
+      process.env
+        .RAZORPAY_KEY_SECRET;
 
     if (
       !razorpayKeyId ||
@@ -320,59 +406,77 @@ export async function POST(request: Request) {
     }
 
     // ==================================================
-    // 10. CREATE RAZORPAY INSTANCE
+    // 11. CREATE RAZORPAY INSTANCE
     // ==================================================
 
     const razorpay =
       new Razorpay({
-        key_id: razorpayKeyId,
-        key_secret: razorpayKeySecret,
+        key_id:
+          razorpayKeyId,
+
+        key_secret:
+          razorpayKeySecret,
       });
 
     // ==================================================
-    // 11. CREATE UNIQUE RECEIPT
+    // 12. CREATE UNIQUE RECEIPT
     // ==================================================
 
     const receipt =
-      `bizai_${user.id.slice(0, 8)}_${Date.now()}`;
+      `bizai_${user.id.slice(
+        0,
+        8
+      )}_${Date.now()}`;
 
     // ==================================================
-    // 12. CREATE RAZORPAY ORDER
+    // 13. CREATE RAZORPAY ORDER
     // ==================================================
 
     const order =
       await razorpay.orders.create({
-        amount: price * 100,
-        currency: "INR",
+        amount:
+          price * 100,
+
+        currency:
+          "INR",
+
         receipt,
 
         // Store server-generated information
         // so the payment verification route
         // can associate the order with the user.
         notes: {
-          user_id: user.id,
-          plan: selectedPlan,
+          user_id:
+            user.id,
+
+          plan:
+            selectedPlan,
+
           billing_cycle:
             selectedBillingCycle,
         },
       });
 
     // ==================================================
-    // 13. SUCCESS RESPONSE
+    // 14. SUCCESS RESPONSE
     // ==================================================
 
     return NextResponse.json({
-      success: true,
+      success:
+        true,
 
       order,
 
-      plan: selectedPlan,
+      plan:
+        selectedPlan,
 
       billingCycle:
         selectedBillingCycle,
 
-      amount: price,
+      amount:
+        price,
     });
+
   } catch (error) {
     console.error(
       "Create order error:",
