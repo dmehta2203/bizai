@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // ========================================
 // POST
@@ -127,7 +128,50 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 5. CHECK OPENAI CONFIGURATION
+    // 5. TRUST ONLY VERIFIED USER ID
+    // ====================================
+
+    const userId =
+      user.id;
+
+    // ====================================
+    // 6. RATE LIMIT
+    // 20 REQUESTS / 60 SECONDS
+    // ====================================
+
+    const rateLimit =
+      await checkRateLimit(
+        userId,
+        "/api/generate-email",
+        20,
+        60
+      );
+
+    if (
+      !rateLimit.allowed
+    ) {
+      console.warn(
+        "Generate Email rate limit triggered for user:",
+        userId
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            rateLimit.error ||
+            "Too many AI requests. Please wait a moment and try again.",
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": "60",
+          },
+        }
+      );
+    }
+
+    // ====================================
+    // 7. CHECK OPENAI CONFIGURATION
     // ====================================
 
     const openAIKey =
@@ -149,6 +193,10 @@ export async function POST(request: Request) {
       );
     }
 
+    // ====================================
+    // 8. CREATE OPENAI CLIENT
+    // ====================================
+
     const openai =
       new OpenAI({
         apiKey:
@@ -156,7 +204,7 @@ export async function POST(request: Request) {
       });
 
     // ====================================
-    // 6. READ REQUEST BODY
+    // 9. READ REQUEST BODY
     // ====================================
 
     let body: unknown;
@@ -199,7 +247,7 @@ export async function POST(request: Request) {
       };
 
     // ====================================
-    // 7. VALIDATE CUSTOMER NAME
+    // 10. VALIDATE CUSTOMER NAME
     // ====================================
 
     const customerName =
@@ -239,7 +287,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 8. VALIDATE BUSINESS NAME
+    // 11. VALIDATE BUSINESS NAME
     // ====================================
 
     let trimmedBusinessName =
@@ -274,7 +322,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 9. VALIDATE PURPOSE
+    // 12. VALIDATE PURPOSE
     // ====================================
 
     const purpose =
@@ -314,7 +362,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 10. GENERATE EMAIL
+    // 13. GENERATE EMAIL
     // ====================================
 
     const response =
@@ -348,7 +396,7 @@ ${trimmedPurpose}
       });
 
     // ====================================
-    // 11. CHECK AI RESPONSE
+    // 14. CHECK AI RESPONSE
     // ====================================
 
     const emailMessage =
@@ -371,18 +419,65 @@ ${trimmedPurpose}
     }
 
     // ====================================
-    // 12. SUCCESS
+    // 15. SUCCESS
     // ====================================
 
     return NextResponse.json({
       message:
         emailMessage,
     });
-  } catch (error) {
+
+  } catch (error: any) {
+    // ====================================
+    // ERROR LOG
+    // ====================================
+
     console.error(
       "AI Email Generation Error:",
       error
     );
+
+    // ====================================
+    // OPENAI RATE LIMIT / QUOTA
+    // ====================================
+
+    if (
+      error?.status ===
+      429
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "AI service is temporarily unavailable because the API quota or credits have been exhausted. Please add OpenAI API credits and try again.",
+        },
+        {
+          status: 429,
+        }
+      );
+    }
+
+    // ====================================
+    // OPENAI AUTH ERROR
+    // ====================================
+
+    if (
+      error?.status ===
+      401
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "OpenAI API key is invalid or missing.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    // ====================================
+    // GENERAL ERROR
+    // ====================================
 
     return NextResponse.json(
       {
