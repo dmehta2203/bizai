@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // ========================================
 // HTML ESCAPE
@@ -153,9 +154,10 @@ export async function POST(
       );
     }
 
-    // Prevent unused-variable issues while
-    // keeping the authenticated identity
-    // explicitly verified on the server.
+    // ====================================
+    // 5. TRUST ONLY VERIFIED USER ID
+    // ====================================
+
     const authenticatedUserId =
       user.id;
 
@@ -165,7 +167,44 @@ export async function POST(
     );
 
     // ====================================
-    // 5. CHECK RESEND API KEY
+    // 6. RATE LIMIT
+    // 20 REQUESTS / 60 SECONDS
+    // ====================================
+
+    const rateLimit =
+      await checkRateLimit(
+        authenticatedUserId,
+        "/api/send-email",
+        20,
+        60
+      );
+
+    if (
+      !rateLimit.allowed
+    ) {
+      console.warn(
+        "Send Email rate limit triggered for user:",
+        authenticatedUserId
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            rateLimit.error ||
+            "Too many email requests. Please wait a moment and try again.",
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After":
+              "60",
+          },
+        }
+      );
+    }
+
+    // ====================================
+    // 7. CHECK RESEND API KEY
     // ====================================
 
     const resendApiKey =
@@ -193,7 +232,7 @@ export async function POST(
       );
 
     // ====================================
-    // 6. READ REQUEST BODY SAFELY
+    // 8. READ REQUEST BODY SAFELY
     // ====================================
 
     let body: unknown;
@@ -237,7 +276,7 @@ export async function POST(
       };
 
     // ====================================
-    // 7. VALIDATE TO
+    // 9. VALIDATE TO
     // ====================================
 
     const to =
@@ -278,7 +317,7 @@ export async function POST(
     }
 
     // ====================================
-    // 8. VALIDATE SUBJECT
+    // 10. VALIDATE SUBJECT
     // ====================================
 
     const subject =
@@ -318,7 +357,7 @@ export async function POST(
     }
 
     // ====================================
-    // 9. VALIDATE MESSAGE
+    // 11. VALIDATE MESSAGE
     // ====================================
 
     const message =
@@ -358,7 +397,7 @@ export async function POST(
     }
 
     // ====================================
-    // 10. VALIDATE CUSTOMER NAME
+    // 12. VALIDATE CUSTOMER NAME
     // ====================================
 
     let safeCustomerName =
@@ -393,7 +432,7 @@ export async function POST(
     }
 
     // ====================================
-    // 11. ESCAPE MESSAGE
+    // 13. ESCAPE MESSAGE
     // ====================================
 
     const safeMessage =
@@ -402,14 +441,7 @@ export async function POST(
       );
 
     // ====================================
-    // 12. ESCAPE SUBJECT
-    // Subject is sent as plain text,
-    // but trimming/validation is already
-    // handled above.
-    // ====================================
-
-    // ====================================
-    // 13. BUILD EMAIL HTML
+    // 14. BUILD EMAIL HTML
     // ====================================
 
     const greeting =
@@ -484,7 +516,7 @@ export async function POST(
     `;
 
     // ====================================
-    // 14. SEND EMAIL
+    // 15. SEND EMAIL
     // ====================================
 
     const {
@@ -506,7 +538,7 @@ export async function POST(
       });
 
     // ====================================
-    // 15. RESEND ERROR
+    // 16. RESEND ERROR
     // ====================================
 
     if (error) {
@@ -527,7 +559,7 @@ export async function POST(
     }
 
     // ====================================
-    // 16. SUCCESS
+    // 17. SUCCESS
     // ====================================
 
     return NextResponse.json(
@@ -543,6 +575,7 @@ export async function POST(
         status: 200,
       }
     );
+
   } catch (error) {
     console.error(
       "Send Email Error:",
