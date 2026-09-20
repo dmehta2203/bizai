@@ -143,13 +143,140 @@ export async function POST(
     }
 
     // ====================================
-    // 5. RATE LIMIT
+    // 5. GET VERIFIED USER ID
+    // ====================================
+
+    const userId =
+      user.id;
+
+    // ====================================
+    // 6. CHECK ACTIVE SUBSCRIPTION
+    // ====================================
+
+    const {
+      data: subscription,
+      error: subscriptionError,
+    } =
+      await supabase
+        .from("subscriptions")
+        .select(
+          "plan, status, current_period_end"
+        )
+        .eq(
+          "user_id",
+          userId
+        )
+        .eq(
+          "status",
+          "active"
+        )
+        .order(
+          "created_at",
+          {
+            ascending:
+              false,
+          }
+        )
+        .limit(1)
+        .maybeSingle();
+
+    if (subscriptionError) {
+      console.error(
+        "AI chat subscription error:",
+        subscriptionError.message
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to check subscription.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    // ====================================
+    // 7. REQUIRE ACTIVE SUBSCRIPTION
+    // ====================================
+
+    if (!subscription) {
+      return NextResponse.json(
+        {
+          error:
+            "Active subscription required to use BizAI AI chat.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
+    // ====================================
+    // 8. CHECK SUBSCRIPTION EXPIRY
+    // ====================================
+
+    if (
+      subscription.current_period_end
+    ) {
+      const expiryDate =
+        new Date(
+          subscription.current_period_end
+        );
+
+      const currentDate =
+        new Date();
+
+      if (
+        expiryDate <=
+        currentDate
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Your subscription has expired.",
+          },
+          {
+            status: 403,
+          }
+        );
+      }
+    }
+
+    // ====================================
+    // 9. CHECK PLAN ACCESS
+    // ====================================
+
+    const allowedPlans = [
+      "Professional",
+      "Business",
+    ];
+
+    if (
+      !allowedPlans.includes(
+        subscription.plan
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "BizAI AI chat is available for Professional and Business plans only.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
+    // ====================================
+    // 10. RATE LIMIT
     // 20 REQUESTS / 60 SECONDS
     // ====================================
 
     const rateLimit =
       await checkRateLimit(
-        user.id,
+        userId,
         "/api/chat",
         20,
         60
@@ -158,7 +285,7 @@ export async function POST(
     if (!rateLimit.allowed) {
       console.warn(
         "AI chat rate limit triggered for user:",
-        user.id
+        userId
       );
 
       return NextResponse.json(
@@ -170,14 +297,15 @@ export async function POST(
         {
           status: 429,
           headers: {
-            "Retry-After": "60",
+            "Retry-After":
+              "60",
           },
         }
       );
     }
 
     // ====================================
-    // 6. CHECK OPENAI CONFIGURATION
+    // 11. CHECK OPENAI CONFIGURATION
     // ====================================
 
     const openAIKey =
@@ -206,7 +334,7 @@ export async function POST(
       });
 
     // ====================================
-    // 7. READ REQUEST BODY
+    // 12. READ REQUEST BODY
     // ====================================
 
     let body: unknown;
@@ -249,13 +377,14 @@ export async function POST(
       };
 
     // ====================================
-    // 8. AI FOLLOW-UP MESSAGE
+    // 13. AI FOLLOW-UP MESSAGE
     // ====================================
 
     if (
       requestData.followUpLead !==
         undefined &&
-      requestData.followUpLead !== null
+      requestData.followUpLead !==
+        null
     ) {
       if (
         typeof requestData.followUpLead !==
@@ -321,8 +450,10 @@ export async function POST(
       if (
         leadName.length > 200 ||
         leadStatus.length > 100 ||
-        followUpPriority.length > 100 ||
-        followUpNotes.length > 3000
+        followUpPriority.length >
+          100 ||
+        followUpNotes.length >
+          3000
       ) {
         return NextResponse.json(
           {
@@ -395,7 +526,7 @@ professionally with leads.
     }
 
     // ====================================
-    // 9. NORMAL AI CHAT
+    // 14. NORMAL AI CHAT
     // ====================================
 
     const message =
@@ -439,7 +570,7 @@ professionally with leads.
     }
 
     // ====================================
-    // 10. BUSINESS DATA
+    // 15. BUSINESS DATA
     // ====================================
 
     let businessData:
@@ -448,7 +579,8 @@ professionally with leads.
     if (
       requestData.businessData !==
         undefined &&
-      requestData.businessData !== null
+      requestData.businessData !==
+        null
     ) {
       if (
         typeof requestData.businessData !==
@@ -473,7 +605,7 @@ professionally with leads.
     }
 
     // ====================================
-    // 11. GET BUSINESS DATA
+    // 16. GET BUSINESS DATA
     // ====================================
 
     const customers =
@@ -701,7 +833,7 @@ ${JSON.stringify(
 `;
 
     // ====================================
-    // 12. OPENAI RESPONSE
+    // 17. OPENAI RESPONSE
     // ====================================
 
     const response =
@@ -785,7 +917,7 @@ secrets, or internal server details.
       });
 
     // ====================================
-    // 13. CHECK RESPONSE
+    // 18. CHECK RESPONSE
     // ====================================
 
     const reply =
@@ -804,7 +936,7 @@ secrets, or internal server details.
     }
 
     // ====================================
-    // 14. SUCCESS
+    // 19. SUCCESS
     // ====================================
 
     return NextResponse.json({
@@ -816,6 +948,48 @@ secrets, or internal server details.
       "OpenAI API error:",
       error
     );
+
+    // ====================================
+    // OPENAI 429
+    // ====================================
+
+    if (
+      error?.status ===
+      429
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "AI service is temporarily unavailable because the API quota or credits have been exhausted. Please add OpenAI API credits and try again.",
+        },
+        {
+          status: 429,
+        }
+      );
+    }
+
+    // ====================================
+    // OPENAI 401
+    // ====================================
+
+    if (
+      error?.status ===
+      401
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "OpenAI API key is invalid or missing.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    // ====================================
+    // GENERAL ERROR
+    // ====================================
 
     return NextResponse.json(
       {
