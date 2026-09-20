@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import Razorpay from "razorpay";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // ========================================
 // PLAN PRICES
@@ -82,7 +83,9 @@ type RazorpayPaymentResponse = {
 // POST
 // ========================================
 
-export async function POST(request: Request) {
+export async function POST(
+  request: Request
+) {
   try {
     // ====================================
     // 1. CHECK AUTHORIZATION HEADER
@@ -98,7 +101,8 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: "Authentication required",
+          error:
+            "Authentication required",
         },
         {
           status: 401,
@@ -115,7 +119,8 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: "Authentication required",
+          error:
+            "Authentication required",
         },
         {
           status: 401,
@@ -128,7 +133,8 @@ export async function POST(request: Request) {
     // ====================================
 
     const supabaseUrl =
-      process.env.NEXT_PUBLIC_SUPABASE_URL;
+      process.env
+        .NEXT_PUBLIC_SUPABASE_URL;
 
     const supabasePublishableKey =
       process.env
@@ -211,7 +217,45 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 5. ADMIN CLIENT
+    // 5. RATE LIMIT PAYMENT VERIFICATION
+    // 10 REQUESTS / 60 SECONDS
+    // ====================================
+
+    const rateLimit =
+      await checkRateLimit(
+        user.id,
+        "/api/payment/verify",
+        10,
+        60
+      );
+
+    if (
+      !rateLimit.allowed
+    ) {
+      console.warn(
+        "Payment verification rate limit triggered for user:",
+        user.id
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            rateLimit.error ||
+            "Too many payment verification attempts. Please wait a moment and try again.",
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After":
+              "60",
+          },
+        }
+      );
+    }
+
+    // ====================================
+    // 6. ADMIN CLIENT
     // SERVER ONLY
     // ====================================
 
@@ -229,7 +273,7 @@ export async function POST(request: Request) {
       );
 
     // ====================================
-    // 6. CHECK RAZORPAY ENVIRONMENT
+    // 7. CHECK RAZORPAY ENVIRONMENT
     // ====================================
 
     const razorpayKeyId =
@@ -261,18 +305,20 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 7. READ REQUEST BODY
+    // 8. READ REQUEST BODY
     // ====================================
 
     let body: unknown;
 
     try {
-      body = await request.json();
+      body =
+        await request.json();
     } catch {
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid request body",
+          error:
+            "Invalid request body",
         },
         {
           status: 400,
@@ -287,7 +333,8 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid request body",
+          error:
+            "Invalid request body",
         },
         {
           status: 400,
@@ -301,8 +348,8 @@ export async function POST(request: Request) {
         razorpay_order_id?: unknown;
         razorpay_signature?: unknown;
 
-        // These are accepted for frontend
-        // compatibility but are NOT trusted.
+        // Accepted for frontend
+        // compatibility but NOT trusted.
         plan?: unknown;
         billingCycle?: unknown;
 
@@ -324,13 +371,16 @@ export async function POST(request: Request) {
         .razorpay_signature;
 
     // ====================================
-    // 8. CHECK PAYMENT IDENTIFIERS
+    // 9. CHECK PAYMENT IDENTIFIERS
     // ====================================
 
     if (
-      typeof razorpayPaymentId !== "string" ||
-      typeof razorpayOrderId !== "string" ||
-      typeof razorpaySignature !== "string" ||
+      typeof razorpayPaymentId !==
+        "string" ||
+      typeof razorpayOrderId !==
+        "string" ||
+      typeof razorpaySignature !==
+        "string" ||
       !razorpayPaymentId ||
       !razorpayOrderId ||
       !razorpaySignature
@@ -348,7 +398,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 9. CREATE RAZORPAY INSTANCE
+    // 10. CREATE RAZORPAY INSTANCE
     // ====================================
 
     const razorpay =
@@ -361,7 +411,7 @@ export async function POST(request: Request) {
       });
 
     // ====================================
-    // 10. VERIFY RAZORPAY SIGNATURE
+    // 11. VERIFY RAZORPAY SIGNATURE
     // ====================================
 
     const bodyToVerify =
@@ -400,7 +450,9 @@ export async function POST(request: Request) {
         );
     }
 
-    if (!signatureValid) {
+    if (
+      !signatureValid
+    ) {
       console.error(
         "Invalid Razorpay payment signature"
       );
@@ -418,7 +470,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 11. FETCH ORDER FROM RAZORPAY
+    // 12. FETCH ORDER FROM RAZORPAY
     // ====================================
 
     let razorpayOrder:
@@ -429,7 +481,9 @@ export async function POST(request: Request) {
         (await razorpay.orders.fetch(
           razorpayOrderId
         )) as RazorpayOrderResponse;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "Unable to fetch Razorpay order:",
         error
@@ -448,7 +502,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 12. VERIFY ORDER ID
+    // 13. VERIFY ORDER ID
     // ====================================
 
     if (
@@ -472,7 +526,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 13. VERIFY ORDER OWNER
+    // 14. VERIFY ORDER OWNER
     // SERVER-GENERATED NOTES
     // ====================================
 
@@ -483,7 +537,8 @@ export async function POST(request: Request) {
 
     if (
       !orderUserId ||
-      orderUserId !== user.id
+      orderUserId !==
+        user.id
     ) {
       console.error(
         "Payment order ownership mismatch"
@@ -502,7 +557,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 14. GET PLAN FROM RAZORPAY ORDER
+    // 15. GET PLAN FROM RAZORPAY ORDER
     // DO NOT TRUST BROWSER PLAN
     // ====================================
 
@@ -517,7 +572,8 @@ export async function POST(request: Request) {
         ?.billing_cycle;
 
     if (
-      typeof orderPlan !== "string" ||
+      typeof orderPlan !==
+        "string" ||
       typeof orderBillingCycle !==
         "string"
     ) {
@@ -538,7 +594,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 15. VALIDATE SERVER-GENERATED PLAN
+    // 16. VALIDATE SERVER-GENERATED PLAN
     // ====================================
 
     if (
@@ -564,7 +620,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 16. VALIDATE SERVER-GENERATED BILLING
+    // 17. VALIDATE SERVER-GENERATED BILLING
     // ====================================
 
     if (
@@ -596,7 +652,7 @@ export async function POST(request: Request) {
       orderBillingCycle as BillingCycle;
 
     // ====================================
-    // 17. GET SERVER-SIDE PRICE
+    // 18. GET SERVER-SIDE PRICE
     // ====================================
 
     const amount =
@@ -610,7 +666,7 @@ export async function POST(request: Request) {
       amount * 100;
 
     // ====================================
-    // 18. VERIFY ORDER AMOUNT
+    // 19. VERIFY ORDER AMOUNT
     // ====================================
 
     if (
@@ -634,7 +690,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 19. VERIFY ORDER CURRENCY
+    // 20. VERIFY ORDER CURRENCY
     // ====================================
 
     if (
@@ -658,7 +714,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 20. FETCH PAYMENT FROM RAZORPAY
+    // 21. FETCH PAYMENT FROM RAZORPAY
     // ====================================
 
     let razorpayPayment:
@@ -669,7 +725,9 @@ export async function POST(request: Request) {
         (await razorpay.payments.fetch(
           razorpayPaymentId
         )) as RazorpayPaymentResponse;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "Unable to fetch Razorpay payment:",
         error
@@ -688,7 +746,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 21. VERIFY PAYMENT ID
+    // 22. VERIFY PAYMENT ID
     // ====================================
 
     if (
@@ -712,7 +770,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 22. VERIFY PAYMENT BELONGS TO ORDER
+    // 23. VERIFY PAYMENT BELONGS TO ORDER
     // ====================================
 
     if (
@@ -736,7 +794,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 23. VERIFY PAYMENT AMOUNT
+    // 24. VERIFY PAYMENT AMOUNT
     // ====================================
 
     if (
@@ -760,7 +818,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 24. VERIFY PAYMENT CURRENCY
+    // 25. VERIFY PAYMENT CURRENCY
     // ====================================
 
     if (
@@ -784,7 +842,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 25. PAYMENT MUST BE CAPTURED
+    // 26. PAYMENT MUST BE CAPTURED
     // ====================================
 
     if (
@@ -811,7 +869,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 26. DO NOT ACCEPT REFUNDED PAYMENT
+    // 27. DO NOT ACCEPT REFUNDED PAYMENT
     // ====================================
 
     if (
@@ -837,12 +895,13 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 27. PREVENT DUPLICATE PAYMENT
+    // 28. PREVENT DUPLICATE PAYMENT
     // ====================================
 
     const {
       data: existingPayment,
-      error: paymentCheckError,
+      error:
+        paymentCheckError,
     } =
       await supabase
         .from("payment_receipts")
@@ -876,7 +935,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 28. HANDLE EXISTING PAYMENT
+    // 29. HANDLE EXISTING PAYMENT
     // ====================================
 
     if (
@@ -928,7 +987,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 29. SUBSCRIPTION DATES
+    // 30. SUBSCRIPTION DATES
     // ====================================
 
     const startDate =
@@ -948,12 +1007,13 @@ export async function POST(request: Request) {
     );
 
     // ====================================
-    // 30. CHECK CURRENT SUBSCRIPTION
+    // 31. CHECK CURRENT SUBSCRIPTION
     // ====================================
 
     const {
       data: existingSubscription,
-      error: subscriptionError,
+      error:
+        subscriptionError,
     } =
       await supabase
         .from("subscriptions")
@@ -969,7 +1029,8 @@ export async function POST(request: Request) {
         .order(
           "created_at",
           {
-            ascending: false,
+            ascending:
+              false,
           }
         )
         .limit(1)
@@ -996,14 +1057,15 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 31. UPDATE CURRENT SUBSCRIPTION
+    // 32. UPDATE CURRENT SUBSCRIPTION
     // ====================================
 
     if (
       existingSubscription
     ) {
       const {
-        error: updateError,
+        error:
+          updateError,
       } =
         await supabase
           .from("subscriptions")
@@ -1062,11 +1124,12 @@ export async function POST(request: Request) {
       );
     } else {
       // ==================================
-      // 32. CREATE SUBSCRIPTION
+      // 33. CREATE SUBSCRIPTION
       // ==================================
 
       const {
-        error: insertError,
+        error:
+          insertError,
       } =
         await supabase
           .from("subscriptions")
@@ -1130,7 +1193,7 @@ export async function POST(request: Request) {
     }
 
     // ====================================
-    // 33. GENERATE RECEIPT NUMBER
+    // 34. GENERATE RECEIPT NUMBER
     // ====================================
 
     const receiptNumber =
@@ -1140,12 +1203,13 @@ export async function POST(request: Request) {
       )}`;
 
     // ====================================
-    // 34. SAVE PAYMENT RECEIPT
+    // 35. SAVE PAYMENT RECEIPT
     // ====================================
 
     const {
       data: receipt,
-      error: receiptError,
+      error:
+        receiptError,
     } =
       await supabase
         .from("payment_receipts")
@@ -1213,7 +1277,7 @@ export async function POST(request: Request) {
     );
 
     // ====================================
-    // 35. SUCCESS RESPONSE
+    // 36. SUCCESS RESPONSE
     // ====================================
 
     return NextResponse.json({
@@ -1243,6 +1307,7 @@ export async function POST(request: Request) {
       receipt:
         receipt,
     });
+
   } catch (error) {
     console.error(
       "Payment verification error:",
