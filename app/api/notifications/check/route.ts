@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // ======================================
 // SUPABASE CLIENT
@@ -18,7 +19,6 @@ export async function POST(
   request: NextRequest
 ) {
   try {
-
     // ======================================
     // GET AUTHORIZATION HEADER
     // ======================================
@@ -87,7 +87,6 @@ export async function POST(
       authError ||
       !authenticatedUser
     ) {
-
       console.error(
         "Authentication error:",
         authError
@@ -110,6 +109,43 @@ export async function POST(
 
     const userId =
       authenticatedUser.id;
+
+    // ======================================
+    // RATE LIMIT
+    // 10 REQUESTS / 60 SECONDS
+    // ======================================
+
+    const rateLimit =
+      await checkRateLimit(
+        userId,
+        "/api/notifications/check",
+        10,
+        60
+      );
+
+    if (
+      !rateLimit.allowed
+    ) {
+      console.warn(
+        "Notification check rate limit triggered for user:",
+        userId
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            rateLimit.error ||
+            "Too many notification requests. Please wait a moment and try again.",
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After":
+              "60",
+          },
+        }
+      );
+    }
 
     // ======================================
     // GET TODAY DATE
@@ -151,8 +187,9 @@ export async function POST(
       appointmentsResult,
       leadsResult,
     ] = await Promise.all([
-
+      // ====================================
       // TASKS
+      // ====================================
 
       supabase
         .from("tasks")
@@ -162,7 +199,9 @@ export async function POST(
           userId
         ),
 
+      // ====================================
       // FOLLOW UPS
+      // ====================================
 
       supabase
         .from("follow_ups")
@@ -172,7 +211,9 @@ export async function POST(
           userId
         ),
 
+      // ====================================
       // SALES
+      // ====================================
 
       supabase
         .from("sales")
@@ -182,7 +223,9 @@ export async function POST(
           userId
         ),
 
+      // ====================================
       // APPOINTMENTS
+      // ====================================
 
       supabase
         .from("appointments")
@@ -192,7 +235,9 @@ export async function POST(
           userId
         ),
 
+      // ====================================
       // LEADS
+      // ====================================
 
       supabase
         .from("leads")
@@ -201,7 +246,6 @@ export async function POST(
           "user_id",
           userId
         ),
-
     ]);
 
     // ======================================
@@ -215,8 +259,9 @@ export async function POST(
       appointmentsResult.error ||
       leadsResult.error;
 
-    if (databaseReadError) {
-
+    if (
+      databaseReadError
+    ) {
       console.error(
         "Notification data error:",
         databaseReadError
@@ -261,14 +306,14 @@ export async function POST(
       message: string,
       type: string
     ) {
-
-      // ======================================
+      // ====================================
       // CHECK DUPLICATE
-      // ======================================
+      // ====================================
 
       const {
         data: existing,
-        error: duplicateError,
+        error:
+          duplicateError,
       } =
         await supabase
           .from("notifications")
@@ -291,8 +336,9 @@ export async function POST(
           )
           .maybeSingle();
 
-      if (duplicateError) {
-
+      if (
+        duplicateError
+      ) {
         console.error(
           "Notification duplicate check error:",
           duplicateError
@@ -301,20 +347,21 @@ export async function POST(
         return;
       }
 
-      // ======================================
+      // ====================================
       // DON'T CREATE DUPLICATE
-      // ======================================
+      // ====================================
 
       if (existing) {
         return;
       }
 
-      // ======================================
+      // ====================================
       // CREATE NOTIFICATION
-      // ======================================
+      // ====================================
 
       const {
-        error: insertError,
+        error:
+          insertError,
       } =
         await supabase
           .from("notifications")
@@ -335,8 +382,9 @@ export async function POST(
               false,
           });
 
-      if (insertError) {
-
+      if (
+        insertError
+      ) {
         console.error(
           "Notification insert error:",
           insertError
@@ -351,7 +399,6 @@ export async function POST(
     const overdueTasks =
       tasks.filter(
         (task: any) => {
-
           if (
             task.status ===
               "Completed" ||
@@ -371,7 +418,6 @@ export async function POST(
       overdueTasks.length >
       0
     ) {
-
       await createNotification(
         "Overdue Tasks",
         `You have ${overdueTasks.length} overdue task(s). Complete them as soon as possible.`,
@@ -396,7 +442,6 @@ export async function POST(
       tasksToday.length >
       0
     ) {
-
       await createNotification(
         "Tasks Due Today",
         `You have ${tasksToday.length} task(s) due today.`,
@@ -420,7 +465,6 @@ export async function POST(
       overdueFollowUps.length >
       0
     ) {
-
       await createNotification(
         "Overdue Follow-ups",
         `You have ${overdueFollowUps.length} overdue follow-up(s). Contact your leads immediately.`,
@@ -444,7 +488,6 @@ export async function POST(
       followUpsToday.length >
       0
     ) {
-
       await createNotification(
         "Follow-ups Due Today",
         `You have ${followUpsToday.length} follow-up(s) scheduled for today.`,
@@ -480,10 +523,11 @@ export async function POST(
       pendingAmount >
       0
     ) {
-
       await createNotification(
         "Pending Payments",
-        `₹${pendingAmount.toLocaleString("en-IN")} payment is still pending.`,
+        `₹${pendingAmount.toLocaleString(
+          "en-IN"
+        )} payment is still pending.`,
         "warning"
       );
     }
@@ -503,7 +547,6 @@ export async function POST(
       appointmentsToday.length >
       0
     ) {
-
       await createNotification(
         "Appointments Today",
         `You have ${appointmentsToday.length} appointment(s) scheduled for today.`,
@@ -528,7 +571,6 @@ export async function POST(
       priorityLeads.length >
       0
     ) {
-
       await createNotification(
         "High Priority Leads",
         `You have ${priorityLeads.length} interested or negotiation lead(s) that need attention.`,
@@ -541,7 +583,6 @@ export async function POST(
     // ======================================
 
     return NextResponse.json({
-
       success:
         true,
 
@@ -549,7 +590,6 @@ export async function POST(
         "Notifications checked successfully.",
 
       summary: {
-
         overdueTasks:
           overdueTasks.length,
 
@@ -573,13 +613,12 @@ export async function POST(
 
         priorityLeads:
           priorityLeads.length,
-
       },
-
     });
 
-  } catch (error: any) {
-
+  } catch (
+    error: any
+  ) {
     console.error(
       "Notification API Error:",
       error
