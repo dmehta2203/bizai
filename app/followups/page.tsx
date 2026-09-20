@@ -31,7 +31,9 @@ type FollowUpFilter =
 export default function FollowUpsPage() {
   const router = useRouter();
 
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [leads, setLeads] =
+    useState<Lead[]>([]);
+
   const [userId, setUserId] =
     useState<string | null>(null);
 
@@ -121,19 +123,20 @@ export default function FollowUpsPage() {
     const {
       data,
       error,
-    } = await supabase
-      .from("leads")
-      .select("*")
-      .eq(
-        "user_id",
-        id
-      )
-      .order(
-        "follow_up_date",
-        {
-          ascending: true,
-        }
-      );
+    } =
+      await supabase
+        .from("leads")
+        .select("*")
+        .eq(
+          "user_id",
+          id
+        )
+        .order(
+          "follow_up_date",
+          {
+            ascending: true,
+          }
+        );
 
     if (error) {
       console.error(
@@ -314,14 +317,25 @@ export default function FollowUpsPage() {
       }
 
       // =================================
-      // SEND SECURE AI REQUEST
+      // SEND ONLY THE LEAD ID
       // =================================
+      //
+      // IMPORTANT:
+      // We intentionally do NOT send:
+      // - name
+      // - status
+      // - follow-up priority
+      // - follow-up notes
+      //
+      // The server fetches the real lead
+      // belonging to the verified user.
 
       const response =
         await fetch(
           "/api/chat",
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
@@ -333,22 +347,8 @@ export default function FollowUpsPage() {
 
             body:
               JSON.stringify({
-                followUpLead: {
-                  id:
-                    lead.id,
-
-                  name:
-                    lead.name,
-
-                  status:
-                    lead.status,
-
-                  follow_up_priority:
-                    lead.follow_up_priority,
-
-                  follow_up_notes:
-                    lead.follow_up_notes,
-                },
+                followUpLeadId:
+                  lead.id,
               }),
           }
         );
@@ -368,12 +368,22 @@ export default function FollowUpsPage() {
         };
       }
 
-      if (!response.ok) {
+      // =================================
+      // HANDLE SERVER ERROR
+      // =================================
+
+      if (
+        !response.ok
+      ) {
         throw new Error(
           data.error ||
-            "Failed to generate message"
+            "Failed to generate message."
         );
       }
+
+      // =================================
+      // CHECK AI RESPONSE
+      // =================================
 
       if (
         !data.reply
@@ -383,6 +393,10 @@ export default function FollowUpsPage() {
         );
       }
 
+      // =================================
+      // SAVE AI MESSAGE
+      // =================================
+
       setAiMessages(
         (current) => ({
           ...current,
@@ -391,6 +405,7 @@ export default function FollowUpsPage() {
             data.reply || "",
         })
       );
+
     } catch (
       error
     ) {
@@ -411,6 +426,7 @@ export default function FollowUpsPage() {
           "Could not generate AI message. Please try again."
         );
       }
+
     } finally {
       setGeneratingId(
         null
@@ -1271,7 +1287,6 @@ export default function FollowUpsPage() {
 
                         {!isCompleted && (
                           <>
-
                             {/* DATE */}
 
                             <label className="text-sm text-slate-400">
