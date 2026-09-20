@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // ========================================
 // POST
@@ -32,6 +33,10 @@ export async function POST(
       );
     }
 
+    // ====================================
+    // 2. GET ACCESS TOKEN
+    // ====================================
+
     const accessToken =
       authorization
         .slice("Bearer ".length)
@@ -51,7 +56,7 @@ export async function POST(
     }
 
     // ====================================
-    // 2. SUPABASE CONFIGURATION
+    // 3. SUPABASE CONFIGURATION
     // ====================================
 
     const supabaseUrl =
@@ -82,7 +87,7 @@ export async function POST(
     }
 
     // ====================================
-    // 3. CREATE AUTH CLIENT
+    // 4. CREATE AUTH CLIENT
     // ====================================
 
     const supabase =
@@ -99,7 +104,7 @@ export async function POST(
       );
 
     // ====================================
-    // 4. VERIFY USER
+    // 5. VERIFY USER
     // ====================================
 
     const {
@@ -132,7 +137,52 @@ export async function POST(
     }
 
     // ====================================
-    // 5. READ REQUEST BODY
+    // 6. TRUST ONLY VERIFIED USER ID
+    // ====================================
+
+    const userId =
+      user.id;
+
+    // ====================================
+    // 7. RATE LIMIT
+    // 20 REQUESTS / 60 SECONDS
+    // ====================================
+
+    const rateLimit =
+      await checkRateLimit(
+        userId,
+        "/api/whatsapp/send",
+        20,
+        60
+      );
+
+    if (
+      !rateLimit.allowed
+    ) {
+      console.warn(
+        "WhatsApp rate limit triggered for user:",
+        userId
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            rateLimit.error ||
+            "Too many WhatsApp requests. Please wait a moment and try again.",
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After":
+              "60",
+          },
+        }
+      );
+    }
+
+    // ====================================
+    // 8. READ REQUEST BODY
     // ====================================
 
     let body: unknown;
@@ -176,7 +226,7 @@ export async function POST(
       };
 
     // ====================================
-    // 6. VALIDATE PHONE
+    // 9. VALIDATE PHONE
     // ====================================
 
     if (
@@ -196,14 +246,18 @@ export async function POST(
       );
     }
 
+    // ====================================
+    // 10. NORMALIZE PHONE
+    // ====================================
+
     let normalizedPhone =
       requestData.phone.replace(
         /\D/g,
         ""
       );
 
-    // Remove leading zero for Indian
-    // local numbers.
+    // Remove leading zero for
+    // Indian local numbers.
     if (
       normalizedPhone.startsWith(
         "0"
@@ -227,7 +281,7 @@ export async function POST(
     }
 
     // ====================================
-    // 7. VALIDATE FINAL PHONE
+    // 11. VALIDATE FINAL PHONE
     // ====================================
 
     if (
@@ -248,7 +302,7 @@ export async function POST(
     }
 
     // ====================================
-    // 8. VALIDATE MESSAGE
+    // 12. VALIDATE MESSAGE
     // ====================================
 
     if (
@@ -267,6 +321,10 @@ export async function POST(
         }
       );
     }
+
+    // ====================================
+    // 13. LIMIT MESSAGE SIZE
+    // ====================================
 
     const message =
       requestData.message.trim();
@@ -288,7 +346,7 @@ export async function POST(
     }
 
     // ====================================
-    // 9. CREATE WHATSAPP URL
+    // 14. CREATE WHATSAPP URL
     // ====================================
 
     const whatsappUrl =
@@ -297,14 +355,19 @@ export async function POST(
       )}`;
 
     // ====================================
-    // 10. SUCCESS
+    // 15. SUCCESS
     // ====================================
 
     return NextResponse.json({
       success: true,
       whatsappUrl,
     });
+
   } catch (error) {
+    // ====================================
+    // ERROR
+    // ====================================
+
     console.error(
       "WhatsApp API error:",
       error
