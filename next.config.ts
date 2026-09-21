@@ -31,14 +31,14 @@ if (
 // CONTENT SECURITY POLICY
 // =========================================================
 //
-// This is a compatibility-focused production CSP.
+// Compatibility-focused CSP for BizAI.
 //
-// Next.js supports nonce-based CSP for stricter
-// environments, but that requires request-time
-// middleware/dynamic rendering. We are first adding
-// a stable CSP that works with the current BizAI
-// architecture and Razorpay checkout.
-// =========================================================
+// Razorpay Checkout requires checkout.razorpay.com
+// and may load supporting security/risk scripts from
+// cdn.razorpay.com.
+//
+// We keep the CSP enabled rather than disabling it.
+//
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -51,36 +51,33 @@ const contentSecurityPolicy = [
 
   "form-action 'self'",
 
-  // Next.js application scripts + Razorpay Checkout.
-  //
-  // unsafe-inline is retained for compatibility with
-  // the current Next.js client rendering setup.
-  "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com",
+  // Next.js application scripts + Razorpay Checkout
+  // + Razorpay supporting CDN scripts.
+  "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://cdn.razorpay.com",
 
-  // Tailwind/Next.js styles and current application
-  // rendering require inline style compatibility.
+  // Current application rendering compatibility.
   "style-src 'self' 'unsafe-inline'",
 
   // Application images + remote image resources.
   "img-src 'self' data: blob: https:",
 
-  // Local fonts and remote fonts if needed.
+  // Local fonts and remote fonts if required.
   "font-src 'self' data: https:",
 
-  // Razorpay Checkout popup/iframe.
+  // Razorpay Checkout iframe.
   "frame-src https://checkout.razorpay.com",
 
-  // Supabase browser API + Realtime WebSocket +
-  // Razorpay browser API.
+  // Supabase browser API + Realtime WebSocket
+  // + Razorpay browser APIs.
   `connect-src 'self' ${supabaseOrigin} ${supabaseWebSocketOrigin} https://*.supabase.co https://*.razorpay.com wss://*.supabase.co`,
 
-  // Allow media used by the application.
+  // Application media.
   "media-src 'self' blob:",
 
-  // Allow workers from the current origin.
+  // Workers from current origin.
   "worker-src 'self' blob:",
 
-  // Allow a same-origin manifest.
+  // Same-origin manifest.
   "manifest-src 'self'",
 ].join("; ");
 
@@ -117,9 +114,9 @@ const securityHeaders = [
       contentSecurityPolicy,
   },
 
-  // Allow payment popups while keeping
-  // the application protected from
-  // unwanted cross-origin opener access.
+  // Razorpay checkout uses payment popups.
+  // Allow the popup relationship without
+  // disabling the rest of our security policy.
   {
     key:
       "Cross-Origin-Opener-Policy",
