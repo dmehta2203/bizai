@@ -7,19 +7,14 @@ import type { NextConfig } from "next";
 let supabaseOrigin = "";
 let supabaseWebSocketOrigin = "";
 
-if (
-  process.env.NEXT_PUBLIC_SUPABASE_URL
-) {
+if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
   try {
     const supabaseUrl = new URL(
       process.env.NEXT_PUBLIC_SUPABASE_URL
     );
 
-    supabaseOrigin =
-      supabaseUrl.origin;
-
-    supabaseWebSocketOrigin =
-      `wss://${supabaseUrl.host}`;
+    supabaseOrigin = supabaseUrl.origin;
+    supabaseWebSocketOrigin = `wss://${supabaseUrl.host}`;
   } catch {
     console.warn(
       "Invalid NEXT_PUBLIC_SUPABASE_URL."
@@ -30,15 +25,6 @@ if (
 // =========================================================
 // CONTENT SECURITY POLICY
 // =========================================================
-//
-// Compatibility-focused CSP for BizAI.
-//
-// Razorpay Checkout requires checkout.razorpay.com
-// and may load supporting security/risk scripts from
-// cdn.razorpay.com.
-//
-// We keep the CSP enabled rather than disabling it.
-//
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -49,32 +35,32 @@ const contentSecurityPolicy = [
 
   "frame-ancestors 'none'",
 
+  // Allow normal BizAI forms only.
   "form-action 'self'",
 
-  // Next.js application scripts + Razorpay Checkout
-  // + Razorpay supporting CDN scripts.
+  // Next.js + Razorpay Checkout + Razorpay CDN.
   "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://cdn.razorpay.com",
 
-  // Current application rendering compatibility.
+  // Current Next.js rendering.
   "style-src 'self' 'unsafe-inline'",
 
-  // Application images + remote image resources.
+  // Application images + Razorpay images.
   "img-src 'self' data: blob: https:",
 
-  // Local fonts and remote fonts if required.
+  // Fonts.
   "font-src 'self' data: https:",
 
-  // Razorpay Checkout iframe.
-  "frame-src https://checkout.razorpay.com",
+  // Razorpay Checkout can use both checkout.razorpay.com
+  // and api.razorpay.com frames.
+  "frame-src https://checkout.razorpay.com https://api.razorpay.com",
 
-  // Supabase browser API + Realtime WebSocket
-  // + Razorpay browser APIs.
-  `connect-src 'self' ${supabaseOrigin} ${supabaseWebSocketOrigin} https://*.supabase.co https://*.razorpay.com wss://*.supabase.co`,
+  // Supabase + Razorpay browser communication.
+  `connect-src 'self' ${supabaseOrigin} ${supabaseWebSocketOrigin} https://*.supabase.co https://api.razorpay.com https://checkout.razorpay.com https://lumberjack.razorpay.com https://*.razorpay.com wss://*.supabase.co`,
 
   // Application media.
   "media-src 'self' blob:",
 
-  // Workers from current origin.
+  // Workers.
   "worker-src 'self' blob:",
 
   // Same-origin manifest.
@@ -98,30 +84,23 @@ const securityHeaders = [
 
   {
     key: "Referrer-Policy",
-    value:
-      "strict-origin-when-cross-origin",
+    value: "strict-origin-when-cross-origin",
   },
 
   {
     key: "Permissions-Policy",
     value:
-      "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+      'camera=(), microphone=(), geolocation=(), browsing-topics=(), payment=(self "https://checkout.razorpay.com" "https://api.razorpay.com")',
   },
 
   {
     key: "Content-Security-Policy",
-    value:
-      contentSecurityPolicy,
+    value: contentSecurityPolicy,
   },
 
-  // Razorpay checkout uses payment popups.
-  // Allow the popup relationship without
-  // disabling the rest of our security policy.
   {
-    key:
-      "Cross-Origin-Opener-Policy",
-    value:
-      "same-origin-allow-popups",
+    key: "Cross-Origin-Opener-Policy",
+    value: "same-origin-allow-popups",
   },
 ];
 
@@ -133,8 +112,7 @@ const productionHeaders = [
   ...securityHeaders,
 
   {
-    key:
-      "Strict-Transport-Security",
+    key: "Strict-Transport-Security",
     value:
       "max-age=63072000; includeSubDomains; preload",
   },
@@ -147,18 +125,14 @@ const productionHeaders = [
 const nextConfig: NextConfig = {
   async headers() {
     const isProduction =
-      process.env.NODE_ENV ===
-      "production";
+      process.env.NODE_ENV === "production";
 
     return [
       {
-        source:
-          "/(.*)",
-
-        headers:
-          isProduction
-            ? productionHeaders
-            : [],
+        source: "/(.*)",
+        headers: isProduction
+          ? productionHeaders
+          : [],
       },
     ];
   },
